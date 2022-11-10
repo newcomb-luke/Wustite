@@ -1,10 +1,10 @@
 bootloader: stage1.bin stage2.bin
 	cat stage1.bin stage2.bin > bootloader.bin
 
-stage1.bin: stage1.s
+stage1.bin: stage1.s stage1-util.s
 	nasm -fbin stage1.s -o stage1.bin
 
-stage2.bin: stage2.s
+stage2.bin: stage2.s stage1-util.s util.s
 	nasm -fbin stage2.s -o stage2.bin
 
 clean:

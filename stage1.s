@@ -10,7 +10,7 @@ init:
 
 	cli ; Stops interrupts
 
-	; Zeros the segment registers
+	; Zero the segment registers
 	jmp 0x0000:zero_seg
 
 	zero_seg:
@@ -20,7 +20,7 @@ init:
 		mov es, ax
 		mov fs, ax
 		mov gs, ax
-		mov sp, init
+		mov sp, 0x7bff
 		cld
 
 	sti ; Resume interrupts
@@ -38,7 +38,7 @@ start:
 	mov si, STARTUP_MSG
 	call puts
 
-	mov al, 0x01 ; We're reading only one sector
+	mov al, 0x04 ; Number of sectors to read, should be larger than stage 2
 	mov cl, 0x02 ; We are in the first sector, the next one is sector 2
 	mov bx, 0x7c00 + 512 ; The location right after this boot sector
 	mov si, DISK_READ_ERROR_MSG
@@ -46,7 +46,7 @@ start:
 
 	jmp bx
 
-%include "./util.s"
+%include "./stage1-util.s"
 
 STARTUP_MSG: db "Reached stage 1", 0x0a, 0x0d, 0
 DISK_READ_ERROR_MSG: db "ERROR: Could not load sector from disk", 0x0a, 0x0d, 0

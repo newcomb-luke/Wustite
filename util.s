@@ -1,56 +1,37 @@
-; null-terminated string pointer in si
-puts:
+; dx: hex value, 16 bits
+print_hex:
 	pusha
+	push bp
+	xor bp, bp
+
+	mov si, HEX_PATTERN
+
+	mov cl, 12
+	mov bp, 2
+
 	.loop:
-		mov al, [si]
-		cmp al, 0
-		je .end
-		call putc
-		add si, 1
+		cmp bp, 6
+		je .print
+
+		mov bx, dx
+		shr bx, cl
+		and bx, 0x000F
+		mov bx, [bx + HEX_TABLE]
+
+		mov [bp + HEX_PATTERN], bl
+
+		sub cl, 4
+		add bp, 1
 		jmp .loop
-	.end:
+	.print:
+
+	call puts
+
+	pop bp
 	popa
 	ret
 
-; char stored in al
-putc:
-	pusha
-	mov ah, 0x0e
-	int 0x10
-	popa
-	ret
+HEX_PATTERN: db "0x****", 0x0a, 0x0d, 0
+HEX_TABLE: db "0123456789abcdef"
 
-; al: number of sectors to read. Begins at 1
-; cl: sector to begin reading at
-; bx: location to load the read data into
-; si: error message pointer
-;
-; Halts and prints error message on failure
-read_disk:
-	pusha
-
-	mov ah, 0x02 ; We want to read the disk
-	mov dl, 0x80 ; We are going to be read as a "hard drive" from Qemu
-	mov ch, 0x00 ; First cylinder
-	mov dh, 0x00 ; First head
-	; mov al, 0x01 ; We're reading only one sector
-	; mov cl, 0x02 ; We are in the first sector, the next one is sector 2
-
-	; Zero the es register
-	push bx
-	xor bx, bx
-	mov es, bx
-	pop bx
-
-	; mov bx, 0x7c00 + 512 ; The location right after this boot sector
-
-	int 0x13
-
-	jc .error
-
-	popa
-	ret
-
-	.error:
-		call puts
-		jmp $
+%include "./stage1-util.s"
