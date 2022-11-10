@@ -25,6 +25,11 @@ init:
 
 	sti ; Resume interrupts
 
+	; Clear the screen
+	mov ah, 0x00
+	mov al, 0x03  ; text mode 80x25 16 colours
+	int 0x10
+
 	; Reset the disk, just in case
 	push ax
 	xor ax, ax   ; 0 means reset disks
