@@ -44,24 +44,14 @@ start:
 	mov si, DISK_READ_ERROR_MSG
 	call read_disk
 
-	jmp second_sector
+	jmp bx
 
 %include "./util.s"
 
-STARTUP_MSG: db "Starting bootloader", 0x0a, 0x0d, 0
+STARTUP_MSG: db "Reached stage 1", 0x0a, 0x0d, 0
 DISK_READ_ERROR_MSG: db "ERROR: Could not load sector from disk", 0x0a, 0x0d, 0
 
 ; Padding
 times 510-($-$$) db 0
 ; Magic number to declare a boot sector
 dw 0xaa55
-
-second_sector:
-	mov si, ALIVE_MSG
-	call puts
-
-	jmp $
-
-ALIVE_MSG: db "I'm alive!", 0x0a, 0x0d, 0
-
-times 512 db 0
