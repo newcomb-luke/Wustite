@@ -1,16 +1,49 @@
 [org 0x7c00]
+[bits 16]
 
-mov si, STARTUP_MSG
-call puts
+section .text
 
-mov al, 0x01 ; We're reading only one sector
-mov cl, 0x02 ; We are in the first sector, the next one is sector 2
-mov bx, 0x7c00 + 512 ; The location right after this boot sector
-call read_disk
+global init
 
-jmp first
+init:
+	; All kinds of BIOS correction stuff
 
-jmp $
+	cli ; Stops interrupts
+
+	; Zeros the segment registers
+	jmp 0x0000:zero_seg
+
+	zero_seg:
+		xor ax, ax
+		mov ss, ax
+		mov ds, ax
+		mov es, ax
+		mov fs, ax
+		mov gs, ax
+		mov sp, init
+		cld
+
+	sti ; Resume interrupts
+
+	; Reset the disk, just in case
+	push ax
+	xor ax, ax   ; 0 means reset disks
+	mov dl, 0x80 ; Hard drive
+	int 0x13
+	pop ax
+
+	jmp start
+
+start:
+	mov si, STARTUP_MSG
+	call puts
+
+	mov al, 0x01 ; We're reading only one sector
+	mov cl, 0x02 ; We are in the first sector, the next one is sector 2
+	mov bx, 0x7c00 + 512 ; The location right after this boot sector
+	call read_disk
+
+	jmp second_sector
 
 ; null-terminated string pointer in si
 puts:
@@ -51,7 +84,7 @@ read_disk:
 
 	; Zero the es register
 	push bx
-	mov bx, 0
+	xor bx, bx
 	mov es, bx
 	pop bx
 
@@ -70,18 +103,18 @@ read_disk:
 		jmp $
 
 STARTUP_MSG: db "Starting bootloader", 0x0a, 0x0d, 0
-DISK_READ_ERROR_MSG: db "ERROR: Could not load kernel from disk", 0x0a, 0x0d, 0
+DISK_READ_ERROR_MSG: db "ERROR: Could not load sector from disk", 0x0a, 0x0d, 0
 
 ; Padding
 times 510-($-$$) db 0
 ; Magic number to declare a boot sector
 dw 0xaa55
 
-first:
-mov si, ALIVE_MSG
-call puts
+second_sector:
+	mov si, ALIVE_MSG
+	call puts
 
-jmp $
+	jmp $
 
 ALIVE_MSG: db "I'm alive!", 0x0a, 0x0d, 0
 
