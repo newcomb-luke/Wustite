@@ -1,5 +1,5 @@
 ; dx: hex value, 16 bits
-print_hex:
+b_print_hex:
 	pusha
 	push bp
 	xor bp, bp
@@ -25,7 +25,7 @@ print_hex:
 		jmp .loop
 	.print:
 
-	call puts
+	call b_puts
 
 	pop bp
 	popa
@@ -33,5 +33,3 @@ print_hex:
 
 HEX_PATTERN: db "0x****", 0x0a, 0x0d, 0
 HEX_TABLE: db "0123456789abcdef"
-
-%include "./stage1-util.s"

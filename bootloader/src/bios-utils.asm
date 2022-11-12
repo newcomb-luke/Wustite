@@ -1,11 +1,11 @@
 ; null-terminated string pointer in si
-puts:
+b_puts:
 	pusha
 	.loop:
 		mov al, [si]
 		cmp al, 0
 		je .end
-		call putc
+		call b_putc
 		add si, 1
 		jmp .loop
 	.end:
@@ -13,7 +13,7 @@ puts:
 	ret
 
 ; char stored in al
-putc:
+b_putc:
 	pusha
 	mov ah, 0x0e
 	int 0x10
@@ -26,7 +26,7 @@ putc:
 ; si: error message pointer
 ;
 ; Halts and prints error message on failure
-read_disk:
+b_read_disk:
 	pusha
 
 	mov ah, 0x02 ; We want to read the disk
@@ -52,5 +52,5 @@ read_disk:
 	ret
 
 	.error:
-		call puts
+		call b_puts
 		jmp $
