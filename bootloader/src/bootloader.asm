@@ -37,7 +37,7 @@ _start:
     mov si, STARTUP_MSG
     call b_puts
 
-    mov al, 0x06 ; Number of sectors to read, in this case 6
+    mov al, 0x02 ; Number of sectors to read, in this case 2
     mov cl, 0x02 ; We are in the first sector, the next one is sector 2
     mov bx, 0x7c00 + 512 ; The location right after the boot sector
     mov si, DISK_READ_ERROR_MSG
@@ -169,4 +169,4 @@ longmode:
 
 	hlt
 
-times (512 * 7) - ($ - $$) db 0
+times (512 * 2) - (($ - $$) - 512) db 0
