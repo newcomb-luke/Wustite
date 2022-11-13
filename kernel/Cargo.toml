@@ -1,0 +1,14 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[profile.dev]
+panic = "abort"
+relocation-model = "pic"
+
+[profile.release]
+panic = "abort"
+relocation-model = "pic"
