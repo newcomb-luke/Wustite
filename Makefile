@@ -5,7 +5,7 @@ bootloader: bootloader/src/bootloader.asm bootloader/src/bios-utils.asm
 	mkdir -p bootloader/build/
 	nasm -fbin bootloader/src/bootloader.asm -o bootloader/build/bootloader.bin
 
-loader: loader/src/main.rs
+loader: loader/src/main.rs loader/Cargo.toml
 	cd loader; \
 	cargo xbuild --release --target target.json; \
 	objcopy -I elf64-x86-64 -O binary target/target/release/loader ../loader.bin
