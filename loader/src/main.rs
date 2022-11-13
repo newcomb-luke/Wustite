@@ -12,6 +12,7 @@ mod video;
 
 use video::{BgColor, FgColor, TextBuffer};
 
+#[inline]
 pub fn port_out(port: u16, data: u8) {
     unsafe {
         asm!(
@@ -26,6 +27,7 @@ pub fn port_out(port: u16, data: u8) {
     }
 }
 
+#[inline]
 pub fn port_in(port: u16) -> u8 {
     let data;
 
@@ -46,8 +48,10 @@ pub fn port_in(port: u16) -> u8 {
 pub extern "C" fn _start() -> ! {
     let mut buffer = TextBuffer::new(FgColor::LightGreen, true, BgColor::Black);
 
-    buffer.putc('0');
-    buffer.putc('x');
+    buffer.putc('H');
+    buffer.putc('i');
+
+    // buffer.safe_print_hex_u8(0x12);
 
     loop {}
 }

@@ -89,6 +89,28 @@ impl TextBuffer {
         self.putc('\n');
     }
 
+    pub fn safe_print_hex_u8(&mut self, val: u8) {
+        self.putc('0');
+        self.putc('x');
+        self.putc(Self::nibble_as_hex_char(val >> 4));
+        self.putc(Self::nibble_as_hex_char(val));
+    }
+
+    fn nibble_as_hex_char(mut v: u8) -> char {
+        v &= 0x0f;
+
+        match v {
+            0..=9 => v as char,
+            10 => 'a',
+            11 => 'b',
+            12 => 'c',
+            13 => 'd',
+            14 => 'e',
+            15 => 'f',
+            _ => 'x',
+        }
+    }
+
     fn increment_pos(&mut self) {
         self.col += 1;
 
