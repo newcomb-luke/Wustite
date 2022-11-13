@@ -124,48 +124,10 @@ LONG_MODE_TRY: db "Attempting to enable long mode", 0x0a, 0x0d, 0
 LONG_MODE_SUCCESS: db "Successfully enabled long mode", 0x0a, 0x0d, 0
 LONG_MODE_UNAVAILABLE: db "Long mode is not supported on this machine. Cannot boot.", 0x0a, 0x0d, 0
 
-VIDEO_MEM equ 0xb8000
-VID_ADDR_REG equ 0x03d4
-VID_DATA_REG equ 0x03d5
-CUR_LOC_LOW equ 0x0f
-CUR_LOC_HIGH equ 0x0e
-
 [bits 64]
 
 longmode:
 	cli
-
-	mov edi, VIDEO_MEM
-	mov rax, 0x1f201f201f201f20
-	mov ecx, 500
-	rep stosq
-
-	mov dx, 0x03cc
-	in al, dx
-
-	or al, 1 << 0
-
-	mov dx, 0x03c2
-	out dx, al
-
-	mov dx, VID_ADDR_REG
-	mov al, CUR_LOC_LOW
-	out dx, al
-
-	mov dx, VID_DATA_REG
-	mov al, 0x01
-	out dx, al
-
-	mov dx, VID_ADDR_REG
-	mov al, CUR_LOC_HIGH
-	out dx, al
-
-	mov dx, VID_DATA_REG
-	mov al, 0x00
-	out dx, al
-
-	mov rax, 0x1f201f201f541f54
-	mov [VIDEO_MEM], rax
 
 	jmp 0x7c00 + 512 * 3
 
