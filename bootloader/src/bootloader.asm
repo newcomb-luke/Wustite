@@ -37,7 +37,7 @@ _start:
     mov si, STARTUP_MSG
     call b_puts
 
-    mov al, 0x02 ; Number of sectors to read, in this case 2
+    mov al, 0x03 ; Number of sectors to read, in this case 3
     mov cl, 0x02 ; We are in the first sector, the next one is sector 2
     mov bx, 0x7c00 + 512 ; The location right after the boot sector
     mov si, DISK_READ_ERROR_MSG
@@ -166,6 +166,8 @@ longmode:
 
 	mov rax, 0x1f201f201f541f54
 	mov [VIDEO_MEM], rax
+
+	jmp 0x7c00 + 512 * 3
 
 	hlt
 
