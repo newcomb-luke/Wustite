@@ -7,8 +7,8 @@ LD_16=/opt/watcom/binl/wlink
 
 SOURCES_C=$(wildcard *.c)
 SOURCES_ASM=$(wildcard *.asm)
-OBJECTS_C=$(pathsubst %.c, $(BUILD_DIR)/secondary/c/%.obj, $(SOURCES_C))
-OBJECTS_ASM=$(pathsubst %.asm, $(BUILD_DIR)/secondary/asm/%.obj, $(SOURCES_ASM))
+OBJECTS_C=$(patsubst %.c, $(BUILD_DIR)/secondary/c/%.obj, $(SOURCES_C))
+OBJECTS_ASM=$(patsubst %.asm, $(BUILD_DIR)/secondary/asm/%.obj, $(SOURCES_ASM))
 
 .PHONY: all secondary clean always
 
@@ -17,7 +17,7 @@ all: secondary
 secondary: $(BUILD_DIR)/secondary.bin
 
 $(BUILD_DIR)/secondary.bin: $(OBJECTS_ASM) $(OBJECTS_C)
-	$(LD_16) NAME $(BUILD_DIR)/secondary.bin FILE \{ $(OBJECTS_ASM) $(OBJECTS_C) \} OPTION MAP=$(BUILD_DIR)/secondary.map @linker.lnk
+	$(LD_16) NAME $(BUILD_DIR)/secondary.bin FILE \{ $(OBJECTS_ASM) $(OBJECTS_C) \} OPTION MAP=$(BUILD_DIR)/stage2.map @linker.lnk
 
 $(BUILD_DIR)/secondary/c/%.obj: %.c always
 	$(CC_16) $(CFLAGS_16) -fo=$@ $<

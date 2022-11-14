@@ -1,9 +1,8 @@
-[org 0x0000]
 [bits 16]
 
 [section _ENTRY class=CODE]
 
-extern _main
+extern _cstart_
 global _start
 
 ; The secondary-stage bootloader, still in 16 bit real mode
@@ -21,7 +20,7 @@ _start:
 	; the boot drive number is in dl
 	xor dh, dh
 	push dx
-	call _main
+	call _cstart_
 
 	jmp halt
 
