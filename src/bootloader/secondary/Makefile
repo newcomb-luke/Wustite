@@ -2,7 +2,7 @@ BUILD_DIR?=build/
 ASM?=nasm
 ASMFLAGS=-f obj
 CC_16=/opt/watcom/binl/wcc
-CFLAGS_16=-4 -d3 -s -wx -ms -zl -zq
+CFLAGS_16=-4 -d3 -s -wx -ms -zl -zq -za99
 LD_16=/opt/watcom/binl/wlink
 
 SOURCES_C=$(wildcard *.c)
