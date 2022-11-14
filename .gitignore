@@ -15,3 +15,6 @@ Cargo.lock
 
 # Clion
 .idea
+
+# Vim
+*.vim
