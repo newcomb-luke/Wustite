@@ -19,38 +19,3 @@ b_putc:
 	int 0x10
 	popa
 	ret
-
-; al: number of sectors to read. Begins at 1
-; cl: sector to begin reading at
-; bx: location to load the read data into
-; si: error message pointer
-;
-; Halts and prints error message on failure
-b_read_disk:
-	pusha
-
-	mov ah, 0x02 ; We want to read the disk
-	mov dl, 0x80 ; We are going to be read as a "hard drive" from Qemu
-	mov ch, 0x00 ; First cylinder
-	mov dh, 0x00 ; First head
-	; mov al, 0x01 ; We're reading only one sector
-	; mov cl, 0x02 ; We are in the first sector, the next one is sector 2
-
-	; Zero the es register
-	push bx
-	xor bx, bx
-	mov es, bx
-	pop bx
-
-	; mov bx, 0x7c00 + 512 ; The location right after this boot sector
-
-	int 0x13
-
-	jc .error
-
-	popa
-	ret
-
-	.error:
-		call b_puts
-		jmp $

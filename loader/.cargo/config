@@ -1,0 +1,4 @@
+
+[build]
+target = "target.json"
+rustflags = ["-C", "link-arg=-Tlink.x"]

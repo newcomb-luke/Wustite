@@ -11,6 +11,7 @@ Cargo.lock
 
 # Output files
 *.bin
+*.img
 
 # Clion
 .idea
