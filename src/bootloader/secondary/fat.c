@@ -2,6 +2,8 @@
 #include "stdint.h"
 #include "string.h"
 
+#define SECTOR_SIZE 512
+
 #pragma pack(push, 1)
 typedef struct {
     uint8_t bdb_boot_jump[3];
@@ -42,9 +44,5 @@ void readOEM(char far* buffer) {
 
 void readVolumeLabel(char far* buffer) {
     memcpy((void far*) &g_currentFATBR->ebr_volume_label, (void far*) buffer, 11);
-}
-
-void lba_to_chs(uint16_t lba) {
-
 }
 

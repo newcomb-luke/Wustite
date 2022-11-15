@@ -9,8 +9,6 @@ void _cdecl cstart_(uint16_t bootDrive) {
     // Our FAT file system starts where we were loaded into memory
     initFAT((char far*) 0x00007c00);
 
-    char buffer[8];
-
     // Print the volume label as a test
     puts("Volume label: ");
     char volumeLabel[11];

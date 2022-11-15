@@ -8,3 +8,14 @@ typedef signed long int int32_t;
 typedef unsigned long int uint32_t;
 typedef signed long long int int64_t;
 typedef unsigned long long int uint64_t;
+
+typedef uint16_t bool;
+
+#define true 1
+#define false 0
+
+#define NULL ((void*) 0)
+
+#define UINT16_MAX 65535
+
+
