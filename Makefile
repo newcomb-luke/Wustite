@@ -35,6 +35,7 @@ $(BUILD_DIR)/boot_floppy.img: bootloader secondary # kernel
 	mkfs.fat -F 12 -n "WUSTITE1" $(BUILD_DIR)/boot_floppy.img
 	dd if=$(BUILD_DIR)/primary.bin of=$(BUILD_DIR)/boot_floppy.img conv=notrunc
 	mcopy -i $(BUILD_DIR)/boot_floppy.img $(BUILD_DIR)/secondary.bin "::secboot.bin"
+	mcopy -i $(BUILD_DIR)/boot_floppy.img test.txt "::test.txt"
 
 # 
 # Kernel

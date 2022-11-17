@@ -155,9 +155,8 @@ __BIOS_Drive_GetParams:
 __BIOS_Drive_ReadSectors:
     push bp
     mov bp, sp
+
     push bx
-    push cx
-    push dx
     push es
 
     ; [bp + 4] - drive number
@@ -176,63 +175,102 @@ __BIOS_Drive_ReadSectors:
     ; DL = drive number (bit 7 set for hard disk)
     ; ES:BX -> data buffer
 
-    mov ah, 0x02
-    ; Set number of sectors to read
-    mov al, [bp + 12]
-    ; Set cylinder number
-    mov bx, [bp + 8]
-    mov ch, bl
-    mov cl, [bp + 10] ; Set the sector number as well
-    and cl, 0b00111111 ; Clea top bits of sector number
-    and bh, 0b00000011 ; Clear the top bits just in case
-    shl bh, 6 ; bits 0-1 become bits 6-7
-    or cl, bh
-    ; Set head number
-    mov dh, [bp + 6]
     ; Set drive number
     mov dl, [bp + 4]
+
+    ; Set cylinder number
+    mov ch, [bp + 8]
+    mov cl, [bp + 9]
+    shl cl, 6
+
+    ; Set head number
+    mov dh, [bp + 6]
+
+    ; Set sector number
+    mov al, [bp + 10]
+    and al, 0b00111111 ; Clear top bits of sector number
+    or cl, al
+
+    ; Set number of sectors to read
+    mov al, [bp + 12]
+
     ; Set destination data buffer
     mov bx, [bp + 16]
+
+    ; mov bl, bh
+    ; call ___print_hex
+    ; mov bx, [bp + 16]
+    ; and bx, 0x0F
+    ; call ___print_hex
+    ; mov bx, [bp + 16]
+
     mov es, bx
     mov bx, [bp + 14]
 
-    ; BIOS docs say to retry reading at least 3 times
-    mov di, 3
+    ; mov bl, bh
+    ; call ___print_hex
+    ; mov bx, [bp + 14]
+    ; and bx, 0x0F
+    ; call ___print_hex
+    ; mov bx, [bp + 14]
 
-.retry:
-    pusha
+	; jmp $
+
+    mov ah, 0x02
     stc
     int 0x13
     jnc .success
 
-    ; failed, try to reset the drive controller
-    popa
-    ; drive number is already in dl
-    mov ah, 0x00 ; reset
-    stc
-    int 0x13
-    jc .fail
-
-    dec di
-    test di, di
-    jnz .retry
-    jmp .fail
-
-.success:
-    xor ax, ax ; success
+.fail:
+    pop es
+    pop bx
+    mov ax, 1
     jmp .done
 
-.fail:
-    mov ax, 1
+.success:
+    pop es
+    pop bx
+    xor ax, ax ; success
 
 .done:
-    pop es
-    pop dx
-    pop cx
-    pop bx
+
     mov sp, bp
     pop bp
     ret
+
+; bl - byte
+___print_hex:
+    push ax
+    push bx
+    push cx
+
+    mov cl, bl
+    shr bl, 4
+    and bx, 0x0f
+
+    pusha
+	mov ah, 0x0e
+	mov al, [HEX_MAP + bx]
+	mov bh, 0
+	int 0x10
+	popa
+
+	mov bl, cl
+	and bx, 0x0F
+
+    pusha
+	mov ah, 0x0e
+	mov al, [HEX_MAP + bx]
+	mov bh, 0
+	int 0x10
+	popa
+
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+HEX_MAP: db "0123456789abcdef"
 
 ;
 ; void _cdecl _x86_div64_32(uint64_t dividend,

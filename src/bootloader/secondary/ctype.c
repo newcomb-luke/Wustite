@@ -12,7 +12,7 @@ char tolower(char c) {
     char result = c;
 
     if (isupper(c)) {
-        c += 'a' - 'A';
+        result += 'a' - 'A';
     }
 
     return result;
@@ -22,7 +22,7 @@ char toupper(char c) {
     char result = c;
 
     if (islower(c)) {
-        c -= 'a' - 'A';
+        result -= 'a' - 'A';
     }
 
     return result;
