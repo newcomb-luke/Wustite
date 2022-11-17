@@ -20,10 +20,10 @@ A custom toy operating system written mostly in the Rust programming language. T
   - [ ] Stage 2
     - [x] Disk read
     - [x] BIOS print routines
-    - [ ] Full FAT12 read support
+    - [x] Minimal FAT12 read support
       - [x] Root directory lookup
-      - [ ] FAT lookup
-      - [ ] Subdirectory lookup
+      - [x] FAT lookup
+      - [x] Read arbitrary file into memory
     - [ ] Minimal ELF executable loading
     - [ ] Protected mode entry
     - [ ] Long mode entry
