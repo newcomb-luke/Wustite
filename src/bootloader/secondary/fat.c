@@ -28,6 +28,7 @@ typedef enum {
 } FAT12Cluster;
 #pragma pack(pop)
 
+// Just in case something horrible happens to the boot sector
 static uint8_t g_FATBootRecordBuffer[SECTOR_SIZE];
 static FAT12_BootRecord* g_FATBootRecord = (FAT12_BootRecord*) &g_FATBootRecordBuffer;
 
@@ -41,9 +42,6 @@ uint16_t FAT_DRIVER_INIT(DISK* disk, FAT12_Index far* index, uint8_t far* curren
         puts("Could not read boot sector");
         return 1;
     }
-
-    phexuint32((uint32_t) g_FATBootRecord);
-    putc('\n');
 
     index->FATStartSector = g_FATBootRecord->bdb_reserved_sectors;
 

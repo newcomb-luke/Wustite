@@ -54,14 +54,17 @@ uint16_t DISK_Read(DISK* disk, uint32_t lba, uint8_t sectorsToRead, uint8_t far*
     uint16_t cylinder;
     uint8_t sector;
 
+    /*
     printf("LBA: ");
     phexuint32(lba);
     putc('\r');
     putc('\n');
+    */
 
 
     DISK_LBA_to_CHS(disk, lba, &head, &cylinder, &sector);
 
+    /*
     printf("Cylinder: ");
     phexuint16(cylinder);
     putc('\n');
@@ -77,6 +80,7 @@ uint16_t DISK_Read(DISK* disk, uint32_t lba, uint8_t sectorsToRead, uint8_t far*
     printf("Destination: ");
     phexuint32((uint32_t) destination);
     putc('\n');
+    */
 
     for (uint16_t i = 0; i < 3; i++) {
         if (_BIOS_Drive_ReadSectors(disk->driveNumber,

@@ -42,9 +42,6 @@ void _cdecl cstart_(uint16_t bootDrive) {
     uint8_t far* fileBuffer = (uint8_t far*)(FAT_FILE_BUFFER_START);
     uint32_t bytesRead = 0;
 
-    phexuint32((uint32_t)fileBuffer);
-    putc('\n');
-
     if (openFile(&disk, indexPtr, &file, "test.txt") != 0) {
         puts("Failed to open test.txt");
         for (;;) {}
