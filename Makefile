@@ -61,3 +61,6 @@ clean:
 
 run: $(BUILD_DIR)/boot_floppy.img
 	qemu-system-x86_64 -fda $(BUILD_DIR)/boot_floppy.img
+
+debug: $(BUILD_DIR)/boot_floppy.img
+	bochs -f bochs.cfg -q

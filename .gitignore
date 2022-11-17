@@ -15,6 +15,7 @@ Cargo.lock
 *.map
 *.err
 *.obj
+*.ini
 
 # Clion
 .idea

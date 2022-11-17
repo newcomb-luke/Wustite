@@ -53,7 +53,6 @@ typedef struct {
     uint16_t FATStartSector;
     uint16_t rootDirStartSector;
     uint16_t dataRegionStartSector;
-    FAT12_BootRecord far* bootRecord;
     FAT12_DirEntry far* currentDirectoryBuffer;
     uint16_t currentDirectoryBufferStartSector;
     uint8_t far* currentFATSectionBuffer;
@@ -67,9 +66,9 @@ typedef struct {
 
 uint16_t FAT_DRIVER_INIT(DISK* disk, FAT12_Index far* index, uint8_t far* currentDirectoryBuffer, uint8_t far* currentFATSectionBuffer);
 
-void readOEM(FAT12_Index far* index, char far* buffer);
+void readOEM(char far* buffer);
 
-void readVolumeLabel(FAT12_Index far* index, char far* buffer);
+void readVolumeLabel(char far* buffer);
 
 uint16_t openFile(DISK* disk, FAT12_Index far* index, FAT12_FILE* fileOut, const char* fileName);
 

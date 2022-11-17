@@ -50,5 +50,3 @@ b_putc:
 	int 0x10
 	popa
 	ret
-
-ALIVE_MSG:	db "Secondary stage reached!", 0x0a, 0x0d, 0

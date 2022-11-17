@@ -19,14 +19,6 @@ void puts(const char* s) {
 
 void farputs(const char far* s) {
     while (*s != 0) {
-        if (*s == '\n') {
-            for (uint32_t i = 0; i < 40000000; i++) {
-                if (i % 2 == 0) {
-                    //
-                }
-            }
-        }
-
         putc(*(s++));
     }
     putc('\n');

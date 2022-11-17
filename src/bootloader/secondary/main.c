@@ -30,7 +30,7 @@ void _cdecl cstart_(uint16_t bootDrive) {
     // Print the volume label as a test
     printf("Volume label: ");
     char volumeLabel[11];
-    readVolumeLabel(indexPtr, (char far*) &volumeLabel);
+    readVolumeLabel((char far*) &volumeLabel);
 
     for (int i = 0; i < 11; i++) {
         putc(volumeLabel[i]);
@@ -41,6 +41,9 @@ void _cdecl cstart_(uint16_t bootDrive) {
     FAT12_FILE file;
     uint8_t far* fileBuffer = (uint8_t far*)(FAT_FILE_BUFFER_START);
     uint32_t bytesRead = 0;
+
+    phexuint32((uint32_t)fileBuffer);
+    putc('\n');
 
     if (openFile(&disk, indexPtr, &file, "test.txt") != 0) {
         puts("Failed to open test.txt");

@@ -42,18 +42,18 @@ _start:
 .zero_seg:
 	xor ax, ax
 	mov ss, ax
-        mov ds, ax
-        mov es, ax
-        mov fs, ax
-        mov gs, ax
-        ; Put the stack in the top section above where we are loaded
-        mov sp, 0x7bff
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    ; Put the stack in the top section above where we are loaded
+    mov sp, 0x7bff
 
 	; BIOS should set dl to the drive number we have booted from
 	; store it
 	mov [ebr_drive_number], dl
 
-        cld
+    cld
 
 	; Read the other drive parameters from the BIOS
 	push es
