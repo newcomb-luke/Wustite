@@ -7,8 +7,6 @@ edition = "2021"
 
 [profile.dev]
 panic = "abort"
-relocation-model = "pic"
 
 [profile.release]
 panic = "abort"
-relocation-model = "pic"

@@ -4,6 +4,7 @@
 #include "bdisk.h"
 #include "string.h"
 #include "memory.h"
+#include "elf.h"
 
 void _cdecl cstart_(uint16_t bootDrive) {
 	setVideoMode(Text80x25_Color);
@@ -41,14 +42,17 @@ void _cdecl cstart_(uint16_t bootDrive) {
     FAT12_FILE file;
     uint8_t far* fileBuffer = (uint8_t far*)(FAT_FILE_BUFFER_START);
     uint32_t bytesRead = 0;
+    const char* fileName = "kernel.o";
 
-    if (openFile(&disk, indexPtr, &file, "test.txt") != 0) {
-        puts("Failed to open test.txt");
+    if (openFile(&disk, indexPtr, &file, fileName) != 0) {
+        printf("Failed to open ");
+        puts(fileName);
         for (;;) {}
     }
 
     if (readFile(&disk, indexPtr, &file, fileBuffer, file.size, &bytesRead) != 0) {
-        puts("Failed to read test.txt");
+        printf("Failed to read ");
+        puts(fileName);
         for (;;) {}
     }
 
@@ -56,9 +60,13 @@ void _cdecl cstart_(uint16_t bootDrive) {
     phexuint32(bytesRead);
     putc('\n');
 
-    puts("File contents: ");
+    if (readELF(fileBuffer) != 0) {
+        putc("Failed to read ");
+        puts(fileName);
+        for (;;) {}
+    }
 
-    farputs(fileBuffer);
+    puts("ELF file read.");
 
 	for (;;) {}
 }

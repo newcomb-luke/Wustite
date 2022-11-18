@@ -9,4 +9,6 @@ SECTIONS
   {
     *(.text .text.*);
   } > RAM
+  .data : { *(.data) }
+  .bss : { *(.bss) }
 }
