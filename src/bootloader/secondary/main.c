@@ -5,6 +5,8 @@
 #include "string.h"
 #include "memory.h"
 #include "elf.h"
+#include "_x86.h"
+#include "_bios.h"
 
 void _cdecl cstart_(uint16_t bootDrive) {
 	setVideoMode(Text80x25_Color);
@@ -61,12 +63,19 @@ void _cdecl cstart_(uint16_t bootDrive) {
     putc('\n');
 
     if (readELF(fileBuffer) != 0) {
-        putc("Failed to read ");
+        printf("Failed to read ");
         puts(fileName);
         for (;;) {}
     }
 
     puts("ELF file read.");
+
+    if (_enable_a20() != 0) {
+        puts("Failed to enable A20 line");
+        for (;;) {}
+    }
+
+    puts("A20 line enabled");
 
 	for (;;) {}
 }

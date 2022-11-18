@@ -23,16 +23,20 @@ __enable_a20:
 	mov bp, sp
 	pusha
 
-    cli ; Clear interrupts
+	cli
 
     ; Is A20 already enabled?
     call test_a20
     cmp ax, 0
     je .success
 
+    sti
+
     ; BIOS method, uses a BIOS interrupt to enable a20
     mov ax, 0x2401
     int 0x15
+
+    cli
 
     call test_a20
     cmp ax, 0
@@ -64,6 +68,7 @@ __enable_a20:
     popa
     mov ax, 0x01
 .finally:
+    sti
 	mov sp, bp
 	pop bp
     ret
@@ -114,6 +119,7 @@ try_enable_a20_keyboard:
 ; 	if ax is 1, the a20 line is disabled
 test_a20:
 	pusha
+	push ds
 
     ; Set data segment register to 0x0000
     xor ax, ax
@@ -185,15 +191,17 @@ test_a20:
 	cmp ax, dx
 	jne .enabled
 
-	.disabled:
-		popa
-		mov ax, 1
-		ret
+.disabled:
+    pop ds
+    popa
+    mov ax, 1
+    ret
 
-	.enabled:
-		popa
-		xor ax, ax
-		ret
+.enabled:
+    pop ds
+    popa
+    xor ax, ax
+    ret
 
 ; Waits until the input buffer is ready for us to write to
 wait_controller_ready_for_input:
