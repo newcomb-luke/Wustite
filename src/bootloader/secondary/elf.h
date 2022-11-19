@@ -1,8 +1,7 @@
 #pragma once
 
-#include "stdint.h"
+#include <stdint.h>
 
-#pragma pack(push, 1)
 typedef struct {
     uint32_t magic;
     uint8_t bitFormat;
@@ -24,7 +23,6 @@ typedef struct {
     uint16_t sectionHeaderTableEntrySize;
     uint16_t sectionHeaderTableNumEntries;
     uint16_t sectionHeaderStringTableIndex;
-} ELF64Header;
-#pragma pack(pop)
+} __attribute__((packed)) ELF64Header;
 
-uint16_t readELF(uint8_t far* fileBuffer);
+uint16_t readELF(uint8_t* fileBuffer);

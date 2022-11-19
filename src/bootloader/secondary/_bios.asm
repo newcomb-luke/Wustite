@@ -1,74 +1,150 @@
-[bits 16]
+[bits 32]
 
-section _TEXT class=CODE
+section .text
 
-global __BIOS_Video_WriteCharTeletype
-global __BIOS_Video_SetVideoMode
-global __BIOS_Drive_Reset
-global __BIOS_Drive_GetParams
-global __BIOS_Drive_ReadSectors
-global __U4D
-global __U4M
+global _BIOS_Video_WriteCharTeletype
+global _BIOS_Video_SetVideoMode
+global _BIOS_Drive_Reset
+global _BIOS_Drive_GetParams
+global _BIOS_Drive_ReadSectors
 
-; args: character, page
-__BIOS_Video_WriteCharTeletype:
-	push bp
-	mov bp, sp
-	push bx
+%macro x86_EnterRealMode 0
+    [bits 32]
+    cli
+    jmp word 0x18:.pmode16
 
-	; [bp + 4] - character
-	; [bp + 6] - page
+.pmode16:
+    [bits 16]
+    ; Disable protected mode bit from cr0
+    mov eax, cr0
+    and al, ~1
+    mov cr0, eax
+
+    ; Jump to real mode again
+    jmp word 0x00:.realmode
+.realmode:
+    [bits 16]
+    ; Set up real mode segments
+    xor ax, ax
+    mov ds, ax
+    mov ss, ax
+
+    ; Re-enable interrupts
+    sti
+%endmacro
+
+%macro x86_EnterProtectedMode 0
+    [bits 16]
+    cli
+    ; Set protected mode bit in control register 0
+    mov eax, cr0
+    or al, 1
+    mov cr0, eax
+
+    jmp dword 0x08:.pmode32
+
+.pmode32:
+    [bits 32]
+    ; Initialize segment registers
+    mov ax, 0x10 ; Offset 16 into the GDT
+    mov ds, ax
+    mov ss, ax
+%endmacro
+
+; Convert linear address to real mode segment address
+; Args:
+;   1 - (in) linear address
+;   2 - (out) target segment register
+;   3 - target 32 bit register to use (eg. eax)
+;   4 - target lower 16-bit half of argument 3 (eg. ax)
+%macro LinearToSegmentOffset 4
+    mov %3, %1 ; Move linear address into intermediary 32 bit register
+    shr %3, 4 ; Shift eax to the right 4 bits, this gets it into the segment-offset form
+    mov %2, %4
+    mov %3, %1
+    and %3, 0xF
+%endmacro
+
+; args: character
+_BIOS_Video_WriteCharTeletype:
+    [bits 32]
+	push ebp
+	mov ebp, esp
+	push eax
+
+	x86_EnterRealMode
+	[bits 16]
+
+	; [bp + 8] - character
 
 	mov ah, 0x0e
-	mov al, [bp + 4]
-	mov bh, [bp + 6]
+	mov al, [bp + 8]
+	xor bx, bx
 	int 0x10
 
-	pop bx
-	mov sp, bp
-	pop bp
+	x86_EnterProtectedMode
+	[bits 32]
+
+    pop eax
+	mov esp, ebp
+	pop ebp
 	ret
 
 
 ; args: mode
-__BIOS_Video_SetVideoMode:
-	push bp
-	mov bp, sp
+_BIOS_Video_SetVideoMode:
+    [bits 32]
+	push ebp
+	mov ebp, esp
 
-	; [bp + 4] - mode
+	x86_EnterRealMode
+	[bits 16]
+
+	; [bp + 8] - mode
 	
 	; set video mode
 	mov ah, 0x00
-	mov al, [bp + 4]
+	mov al, [bp + 8]
 	int 0x10
 
-	mov sp, bp
-	pop bp
+	x86_EnterProtectedMode
+	[bits 32]
+
+	mov esp, ebp
+	pop ebp
 	ret
 
 ; args: drive number
 ; returns 0 if successful, nonzero otherwise
-__BIOS_Drive_Reset:
-    push bp
-    mov bp, sp
-    push dx
+_BIOS_Drive_Reset:
+    [bits 32]
+    push ebp
+    mov ebp, esp
+    push edx
 
-    ; [bp + 4] - drive number
+    x86_EnterRealMode
+    [bits 16]
+
+    ; [bp + 8] - drive number
     mov ah, 0x00 ; "reset"
-    mov dl, [bp + 4]
+    mov dl, [bp + 8]
     stc
     int 0x13
+
+    x86_EnterProtectedMode
+    [bits 32]
+
     jc .fail
-    xor ax, ax
+    xor eax, eax
     jmp .done
 
 .fail:
-    mov ax, 1
+    mov eax, 1
 
 .done:
-    pop dx
-    mov sp, bp
-    pop bp
+    pop edx
+    mov esp, ebp
+    pop ebp
     ret
 
 ;
@@ -78,17 +154,21 @@ __BIOS_Drive_Reset:
 ;                                       uint16_t* maxCylinderOut,
 ;                                       uint8_t* maxSectorOut);
 ;
-__BIOS_Drive_GetParams:
-    push bp
-    mov bp, sp
-    push bx
-    push si
+_BIOS_Drive_GetParams:
+    [bits 32]
+    push ebp
+    mov ebp, esp
+    push ebx
+    push esi
 
-    ; [bp + 4] - drive number
-    ; [bp + 6] - drive type ptr
-    ; [bp + 8] - max head ptr
-    ; [bp + 10] - max cylinder ptr
-    ; [bp + 12] - max sector ptr
+    x86_EnterRealMode
+    [bits 16]
+
+    ; [bp + 8] - drive number
+    ; [bp + 12] - drive type ptr
+    ; [bp + 16] - max head ptr
+    ; [bp + 20] - max cylinder ptr
+    ; [bp + 24] - max sector ptr
 
     push es
     push di
@@ -96,11 +176,14 @@ __BIOS_Drive_GetParams:
     xor di, di
     mov es, di
     mov ah, 0x08
-    mov dl, [bp + 4]
+    mov dl, [bp + 8]
     stc
     int 0x13
     pop di
     pop es
+
+    x86_EnterProtectedMode
+    [bits 32]
 
     jc .fail
 
@@ -112,36 +195,36 @@ __BIOS_Drive_GetParams:
     ; DL = number of drives
 
     ; Store the drive type
-    mov si, [bp + 6]
-    mov [si], bl
+    mov esi, [ebp + 12]
+    mov [esi], bl
 
     ; Store the max head number
-    mov si, [bp + 8]
-    mov [si], dh
+    mov esi, [ebp + 16]
+    mov [esi], dh
 
     ; Store the max cylinder number
     mov bl, ch
     mov bh, cl
     shr bh, 6
-    mov si, [bp + 10]
-    mov [si], bx
+    mov esi, [ebp + 20]
+    mov [esi], bx
 
     ; Store the max sector number
     and cl, 0b00111111 ; sector number is in bits 5-0
-    mov si, [bp + 12]
-    mov [si], cl
+    mov esi, [ebp + 24]
+    mov [esi], cl
 
-    xor ax, ax ; success
+    xor eax, eax ; success
     jmp .done
 
 .fail:
-    mov ax, 1
+    mov eax, 1
 
 .done:
-    pop si
-    pop bx
-    mov sp, bp
-    pop bp
+    pop esi
+    pop ebx
+    mov esp, ebp
+    pop ebp
     ret
 
 ;
@@ -152,20 +235,17 @@ __BIOS_Drive_GetParams:
 ;                                         uint8_t sectorCount,
 ;                                         uint8_t far* dataDestination);
 ;
-__BIOS_Drive_ReadSectors:
-    push bp
-    mov bp, sp
+_BIOS_Drive_ReadSectors:
+    [bits 32]
+    push ebp
+    mov ebp, esp
 
-    push bx
-    push es
-
-    ; [bp + 4] - drive number
-    ; [bp + 6] - head
-    ; [bp + 8] - cylinder
-    ; [bp + 10] - sector
-    ; [bp + 12] - sector read count
-    ; [bp + 14] - data destination (low 16 bits)
-    ; [bp + 16] - data destination (high 16 bits)
+    ; [bp + 8] - drive number
+    ; [bp + 12] - head
+    ; [bp + 16] - cylinder
+    ; [bp + 20] - sector
+    ; [bp + 24] - sector read count
+    ; [bp + 28] - data destination
 
     ; AL = number of sectors to read (must be nonzero)
     ; CH = low eight bits of cylinder number
@@ -175,27 +255,34 @@ __BIOS_Drive_ReadSectors:
     ; DL = drive number (bit 7 set for hard disk)
     ; ES:BX -> data buffer
 
+    x86_EnterRealMode
+
+    push bx
+    push es
+
     ; Set drive number
-    mov dl, [bp + 4]
+    mov dl, [bp + 8]
 
     ; Set cylinder number
-    mov ch, [bp + 8]
-    mov cl, [bp + 9]
+    mov ch, [bp + 16]
+    mov cl, [bp + 18]
     shl cl, 6
 
     ; Set head number
-    mov dh, [bp + 6]
+    mov dh, [bp + 12]
 
     ; Set sector number
-    mov al, [bp + 10]
+    mov al, [bp + 20]
     and al, 0b00111111 ; Clear top bits of sector number
     or cl, al
 
     ; Set number of sectors to read
-    mov al, [bp + 12]
+    mov al, [bp + 24]
 
     ; Set destination data buffer
-    mov bx, [bp + 16]
+    LinearToSegmentOffset [bp + 28], es, ebx, bx
+
+    ; mov bx, [bp + 16]
 
     ; mov bl, bh
     ; call ___print_hex
@@ -204,8 +291,8 @@ __BIOS_Drive_ReadSectors:
     ; call ___print_hex
     ; mov bx, [bp + 16]
 
-    mov es, bx
-    mov bx, [bp + 14]
+    ; mov es, bx
+    ; mov bx, [bp + 14]
 
     ; mov bl, bh
     ; call ___print_hex
@@ -219,23 +306,22 @@ __BIOS_Drive_ReadSectors:
     mov ah, 0x02
     stc
     int 0x13
+
+    pop es
+    pop bx
+
+    x86_EnterProtectedMode
+
     jnc .success
 
 .fail:
-    pop es
-    pop bx
-    mov ax, 1
+    mov eax, 1
     jmp .done
-
 .success:
-    pop es
-    pop bx
-    xor ax, ax ; success
-
+    xor eax, eax ; success
 .done:
-
-    mov sp, bp
-    pop bp
+    mov esp, ebp
+    pop ebp
     ret
 
 ; bl - byte
@@ -271,82 +357,3 @@ ___print_hex:
     ret
 
 HEX_MAP: db "0123456789abcdef"
-
-;
-; void _cdecl _x86_div64_32(uint64_t dividend,
-;                           uint32_t divisor,
-;                           uint64_t* quotientOut,
-;                           uint32_t* remainderOut);
-;
-__x86_div64_32:
-    push bp
-    mov bp, sp
-    push bx
-
-    ; divide upper 32 bits
-    mov eax, [bp + 8]
-    mov ecx, [bp + 12]
-    xor edx, edx
-    div ecx
-    ; eax: quotient, edx: remainder
-    mov bx, [bp + 16]
-    mov [bx + 4], eax
-
-    mov eax, [bp + 4]
-    div ecx
-
-    mov [bx], eax
-    mov bx, [bp + 18]
-    mov [bx], edx
-
-    pop bx
-    mov sp, bp
-    pop bp
-    ret
-
-; unsigned 4-byte divide
-; input:
-; dx;ax dividend
-; cx;bx divisor
-; output:
-; dx;ax quotient
-; cx;bx remainder
-__U4D:
-    shl edx, 16
-    mov dx, ax
-    mov eax, edx
-    xor edx, edx
-
-    shl ecx, 16
-    mov cx, bx
-
-    div ecx
-    mov ebx, edx
-    mov ecx, edx
-    shr ecx, 16
-
-    mov edx, eax
-    shr edx, 16
-
-    ret
-
-; 4 byte multiply
-; input:
-; dx;ax - integer 1
-; cx;bx - integer 2
-; output:
-; dx;ax - product
-__U4M:
-    shl edx, 16
-    mov dx, ax
-    mov eax, edx
-
-    shl ecx, 16
-    mov cx, bx
-
-    mul ecx
-
-    mov edx, eax
-    shr edx, 16
-
-    ret

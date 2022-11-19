@@ -1,14 +1,11 @@
 [bits 16]
-
-section _TEXT class=CODE
-
 KEYBOARD_DATA_PORT           equ 0x60
 KEYBOARD_STATUS_PORT         equ 0x64 ; If this port is being read from, it is the status register
 KEYBOARD_CMD_PORT            equ 0x64 ; If this port is being written to, it is the command register
 
 CONTROLLER_DISABLE_KEYBOARD  equ 0xAD
 CONTROLLER_ENABLE_KEYBOARD   equ 0xAE
-CONTROLLER_READ_OUTPUT_PORT  equ 0xD0
+CONTROLLER_READ_OUTPUT_PORT  equ 0xD1
 CONTROLLER_WRITE_OUTPUT_PORT equ 0xD1
 
 OUTPUT_BUFFER_STATUS_BIT     equ 1
@@ -16,27 +13,17 @@ INPUT_BUFFER_STATUS_BIT      equ 2
 
 A20_GATE_OUTPUT_PORT_BIT     equ 2
 
-global __enable_a20
-
 __enable_a20:
-	push bp
-	mov bp, sp
 	pusha
-
-	cli
 
     ; Is A20 already enabled?
     call test_a20
     cmp ax, 0
     je .success
 
-    sti
-
     ; BIOS method, uses a BIOS interrupt to enable a20
     mov ax, 0x2401
     int 0x15
-
-    cli
 
     call test_a20
     cmp ax, 0
@@ -68,9 +55,6 @@ __enable_a20:
     popa
     mov ax, 0x01
 .finally:
-    sti
-	mov sp, bp
-	pop bp
     ret
 
 try_enable_a20_keyboard:

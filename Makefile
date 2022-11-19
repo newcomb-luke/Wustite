@@ -1,12 +1,10 @@
-ASM=nasm
-SRC_DIR=src
-BUILD_DIR=build
-CC_16=/opt/watcom/binl/wcc
-LD_16=/opt/watcom/binl/wlink
-
 .PHONY: all floppy_image bootloader secondary clean always kernel
 
 all: bootloader floppy_image
+
+include toolchain/config.mk
+
+include toolchain/toolchain.mk
 
 #
 # Bootloader
@@ -47,7 +45,6 @@ $(BUILD_DIR)/kernel.o: always FORCE
 	cd kernel; \
 	cargo xbuild --release --target target.json
 	cp kernel/target/target/release/kernel $(BUILD_DIR)/kernel.o
-	# objcopy -I elf64-x86-64 -O binary target/target/release/loader ../loader.bin
 
 FORCE: ;
 

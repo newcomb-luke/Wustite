@@ -1,6 +1,7 @@
 #include "elf.h"
 #include "bio.h"
 #include "string.h"
+#include "math.h"
 
 #define ELF_FILE_MAGIC           0x464C457F
 #define ELF_FILE_32BIT           0x01
@@ -28,9 +29,8 @@
 #define PF_W                     0x02
 #define PF_R                     0x04
 
-static ELF64Header far* g_ELF;
+static ELF64Header* g_ELF;
 
-#pragma pack(push, 1)
 typedef struct {
     uint32_t segmentType;
     uint32_t flags;
@@ -40,13 +40,12 @@ typedef struct {
     uint64_t sizeInFile;
     uint64_t sizeInMemory;
     uint64_t alignment;
-} ELF64ProgramHeaderEntry;
-#pragma pack(pop)
+} __attribute__((packed)) ELF64ProgramHeaderEntry;
 
-void _PrintProgramHeaderTable(uint32_t tableOffset, uint32_t numEntries);
+void _PrintProgramHeaderTable(uint64_t tableOffset, uint16_t numEntries);
 
-uint16_t readELF(uint8_t far* fileBuffer) {
-    g_ELF = (ELF64Header far*) fileBuffer;
+uint16_t readELF(uint8_t* fileBuffer) {
+    g_ELF = (ELF64Header*) fileBuffer;
 
     if (g_ELF->magic != ELF_FILE_MAGIC) {
         puts("File read is not an ELF file");
@@ -92,27 +91,23 @@ uint16_t readELF(uint8_t far* fileBuffer) {
     }
 
     printf("Program entry point: 0x");
-    uint32_t entryPointUpper = *(((uint32_t far*)&g_ELF->entryPoint) + 1);
-    uint32_t entryPointLower = *(((uint32_t far*)&g_ELF->entryPoint) + 0);
-    phexuint32(entryPointUpper);
-    phexuint32(entryPointLower);
+    phexuint64(g_ELF->entryPoint);
     putc('\n');
 
-    // If this value takes the full 64 bits to store, I'll eat a hat made out of gummy bears
-    uint32_t ph_offset = *(((uint32_t far*)&g_ELF->programHeaderTableOffset) + 0);
-    uint32_t phnum = g_ELF->programHeaderTableNumEntries;
+    uint64_t ph_offset = *(((uint64_t *)&g_ELF->programHeaderTableOffset) + 0);
+    uint16_t phnum = g_ELF->programHeaderTableNumEntries;
 
     _PrintProgramHeaderTable(ph_offset, phnum);
 
     return 0;
 }
 
-void _PrintProgramHeaderEntry(ELF64ProgramHeaderEntry far* entry);
+void _PrintProgramHeaderEntry(ELF64ProgramHeaderEntry* entry);
 
-void _PrintProgramHeaderTable(uint32_t tableOffset, uint32_t numEntries) {
+void _PrintProgramHeaderTable(uint64_t tableOffset, uint16_t numEntries) {
     puts("Program header: ");
 
-    ELF64ProgramHeaderEntry far* table = (ELF64ProgramHeaderEntry far*)(((uint8_t far*)g_ELF) + tableOffset);
+    ELF64ProgramHeaderEntry* table = (ELF64ProgramHeaderEntry*)(((uint8_t*)g_ELF) + tableOffset);
 
     for (uint16_t i = 0; i < numEntries; i++) {
         _PrintProgramHeaderEntry(table);
@@ -147,83 +142,53 @@ const char* _HeaderTypeToStr(uint32_t headerType) {
     }
 }
 
-uint8_t _AlignmentToU8(uint32_t encoded) {
-    if (encoded == 0 || encoded == 1) {
-        return 0;
+void _PrintProgramHeaderEntry(ELF64ProgramHeaderEntry* entry) {
+    const char* typeStr = _HeaderTypeToStr(entry->segmentType);
+    printf("    ");
+    printf(typeStr);
+    putc('\n');
+
+    printf("  offset ");
+    phexuint64(entry->offset);
+    putc(' ');
+
+    printf("vaddr ");
+    phexuint64(entry->virtualAddress);
+    putc(' ');
+
+    printf("paddr ");
+    phexuint64(entry->physicalAddress);
+    putc(' ');
+
+    putc('\n');
+
+    printf("  filesz ");
+    phexuint64(entry->sizeInFile);
+    putc(' ');
+
+    printf("memsz ");
+    phexuint64(entry->sizeInMemory);
+    putc(' ');
+
+    printf("align 2**");
+    phexuint8(log2(entry->alignment));
+    putc(' ');
+
+    printf("flags ");
+    if ((entry->flags & PF_R) != 0) {
+        putc('r');
+    } else {
+        putc('-');
     }
-
-    uint8_t power = 0;
-
-    while (encoded != 0) {
-        encoded = encoded >> 4;
-        power++;
+    if ((entry->flags & PF_W) != 0) {
+        putc('w');
+    } else {
+        putc('-');
     }
-
-    return power;
-}
-
-void _PrintProgramHeaderEntry(ELF64ProgramHeaderEntry far* entry) {
-const char* typeStr = _HeaderTypeToStr(entry->segmentType);
-printf("    ");
-printf(typeStr);
-putc('\n');
-
-printf("  offset ");
-uint32_t upper = *(((uint32_t far*)&entry->offset) + 1);
-uint32_t lower = *(((uint32_t far*)&entry->offset) + 0);
-phexuint32(upper);
-phexuint32(lower);
-putc(' ');
-
-printf("vaddr ");
-upper = *(((uint32_t far*)&entry->virtualAddress) + 1);
-lower = *(((uint32_t far*)&entry->virtualAddress) + 0);
-phexuint32(upper);
-phexuint32(lower);
-putc(' ');
-
-printf("paddr ");
-upper = *(((uint32_t far*)&entry->physicalAddress) + 1);
-lower = *(((uint32_t far*)&entry->physicalAddress) + 0);
-phexuint32(upper);
-phexuint32(lower);
-putc(' ');
-
-putc('\n');
-
-printf("  filesz ");
-upper = *(((uint32_t far*)&entry->sizeInFile) + 1);
-lower = *(((uint32_t far*)&entry->sizeInFile) + 0);
-phexuint32(upper);
-phexuint32(lower);
-putc(' ');
-
-printf("memsz ");
-upper = *(((uint32_t far*)&entry->sizeInMemory) + 1);
-lower = *(((uint32_t far*)&entry->sizeInMemory) + 0);
-phexuint32(upper);
-phexuint32(lower);
-putc(' ');
-
-printf("align 2**");
-phexuint8(_AlignmentToU8((uint32_t)entry->alignment));
-putc(' ');
-
-printf("flags ");
-if ((entry->flags & PF_R) != 0) {
-putc('r');
-} else {
-putc('-');
-}
-if ((entry->flags & PF_W) != 0) {
-putc('w');
-} else {
-putc('-');
-}
-if ((entry->flags & PF_X) != 0) {
-putc('x');
-} else {
-putc('-');
-}
-putc('\n');
+    if ((entry->flags & PF_X) != 0) {
+        putc('x');
+    } else {
+        putc('-');
+    }
+    putc('\n');
 }

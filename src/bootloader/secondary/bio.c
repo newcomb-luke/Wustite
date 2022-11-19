@@ -3,10 +3,10 @@
 
 void putc(char c) {
     if (c == '\n') {
-        _BIOS_Video_WriteCharTeletype('\r', 0);
-        _BIOS_Video_WriteCharTeletype('\n', 0);
+        _BIOS_Video_WriteCharTeletype('\r');
+        _BIOS_Video_WriteCharTeletype('\n');
     } else {
-        _BIOS_Video_WriteCharTeletype(c, 0);
+        _BIOS_Video_WriteCharTeletype(c);
     }
 }
 
@@ -14,13 +14,6 @@ void puts(const char* s) {
 	while (*s != 0) {
 		putc(*(s++));
 	}
-    putc('\n');
-}
-
-void farputs(const char far* s) {
-    while (*s != 0) {
-        putc(*(s++));
-    }
     putc('\n');
 }
 
@@ -66,7 +59,17 @@ void phexuint32(uint32_t value) {
     }
 }
 
-void hexdump(uint8_t far* addr) {
+void phexuint64(uint64_t value) {
+    uint8_t shift = 64 - 4;
+
+    for (int i = 0; i < 16; i++) {
+        uint8_t nibble = (value >> shift) & 0xF;
+        putc(HEX_MAP[nibble]);
+        shift -= 4;
+    }
+}
+
+void hexdump(uint8_t* addr) {
     for (int i = 0; i < 20; i++) {
         for (int j = 0; j < 26; j++) {
             phexuint8(*addr);

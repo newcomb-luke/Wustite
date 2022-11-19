@@ -49,7 +49,7 @@ void DISK_LBA_to_CHS(DISK* disk,
     *headOut = (lba / (disk->maxSector)) % (disk->maxHead + 1);
 }
 
-uint16_t DISK_Read(DISK* disk, uint32_t lba, uint8_t sectorsToRead, uint8_t far* destination) {
+uint16_t DISK_Read(DISK* disk, uint32_t lba, uint8_t sectorsToRead, uint8_t* destination) {
     uint8_t head;
     uint16_t cylinder;
     uint8_t sector;

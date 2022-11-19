@@ -1,19 +1,16 @@
-#include "stdint.h"
+#include <stdint.h>
 #include "bio.h"
 #include "fat.h"
 #include "bdisk.h"
-#include "string.h"
 #include "memory.h"
 #include "elf.h"
-#include "_x86.h"
-#include "_bios.h"
 
-void _cdecl cstart_(uint16_t bootDrive) {
+void __attribute__((cdecl)) _start(uint32_t bootDrive) {
 	setVideoMode(Text80x25_Color);
 
     DISK disk;
     FAT12_Index index;
-    FAT12_Index far* indexPtr = (FAT12_Index far*) &index;
+    FAT12_Index* indexPtr = (FAT12_Index*) &index;
 
     if (DISK_Initialize(&disk, bootDrive) != 0) {
         puts("Failed to initialize disk");
@@ -23,7 +20,7 @@ void _cdecl cstart_(uint16_t bootDrive) {
     puts("Disk initialized");
 
     // Our FAT file system starts where we were loaded into memory
-    if (FAT_DRIVER_INIT(&disk, indexPtr, (uint8_t far*)(FAT_CURRENT_DIRECTORY_BUFFER_START), (uint8_t far*)(FAT_CURRENT_FAT_SECTION_BUFFER_START)) != 0) {
+    if (FAT_DRIVER_INIT(&disk, indexPtr, (uint8_t*)(FAT_CURRENT_DIRECTORY_BUFFER_START), (uint8_t*)(FAT_CURRENT_FAT_SECTION_BUFFER_START)) != 0) {
         puts("Error initializing FAT driver");
         for (;;) {}
     }
@@ -33,7 +30,7 @@ void _cdecl cstart_(uint16_t bootDrive) {
     // Print the volume label as a test
     printf("Volume label: ");
     char volumeLabel[11];
-    readVolumeLabel((char far*) &volumeLabel);
+    readVolumeLabel((char*) &volumeLabel);
 
     for (int i = 0; i < 11; i++) {
         putc(volumeLabel[i]);
@@ -42,7 +39,7 @@ void _cdecl cstart_(uint16_t bootDrive) {
     putc('\n');
 
     FAT12_FILE file;
-    uint8_t far* fileBuffer = (uint8_t far*)(FAT_FILE_BUFFER_START);
+    uint8_t* fileBuffer = (uint8_t*)(FAT_FILE_BUFFER_START);
     uint32_t bytesRead = 0;
     const char* fileName = "kernel.o";
 
@@ -70,13 +67,6 @@ void _cdecl cstart_(uint16_t bootDrive) {
 
     puts("ELF file read.");
 
-    if (_enable_a20() != 0) {
-        puts("Failed to enable A20 line");
-        for (;;) {}
-    }
-
-    puts("A20 line enabled");
-
-	for (;;) {}
+    for (;;) {}
 }
 

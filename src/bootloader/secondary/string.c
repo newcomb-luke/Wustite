@@ -1,25 +1,26 @@
 #include "string.h"
+#include <stddef.h>
 
-void memcpy(const void far* srcptr, void far* dstptr, uint16_t len) {
-    const uint8_t far* src = (const uint8_t far*) srcptr;
-    uint8_t far* dst = (uint8_t far*) dstptr;
+void memcpy(const void* srcptr, void* dstptr, uint16_t len) {
+    const uint8_t* src = (const uint8_t*) srcptr;
+    uint8_t* dst = (uint8_t*) dstptr;
 
     for (uint16_t i = 0; i < len; i++) {
         dst[i] = src[i];
     }
 }
 
-void memset(void far* ptr, uint8_t value, uint16_t len) {
-    uint8_t far* dst = (uint8_t far*) ptr;
+void memset(void* ptr, uint8_t value, uint16_t len) {
+    uint8_t* dst = (uint8_t*) ptr;
 
     for (uint16_t i = 0; i < len; i++) {
         dst[i] = value;
     }
 }
 
-int16_t memcmp(const void far* left, const void far* right, uint16_t len) {
-    const char far* leftPtr = (const char far*) left;
-    const char far* rightPtr = (const char far*) right;
+int16_t memcmp(const void* left, const void* right, uint16_t len) {
+    const char* leftPtr = (const char*) left;
+    const char* rightPtr = (const char*) right;
     int16_t value = 0;
 
     for (uint16_t i = 0; i < len; i++) {

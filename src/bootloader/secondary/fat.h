@@ -1,9 +1,8 @@
 #pragma once
 
-#include "stdint.h"
+#include <stdint.h>
 #include "bdisk.h"
 
-#pragma pack(push, 1)
 typedef struct {
     uint8_t bdb_boot_jump[3];
     uint8_t bdb_oem_id[8];
@@ -28,10 +27,8 @@ typedef struct {
     uint8_t ebr_system_id[8];
 
     // code and magic number
-} FAT12_BootRecord;
-#pragma pack(pop)
+} __attribute__((packed)) FAT12_BootRecord;
 
-#pragma pack(push, 1)
 typedef struct {
     uint8_t entryName[8];
     uint8_t entryExt[3];
@@ -46,16 +43,15 @@ typedef struct {
     uint16_t lastModificationDate;
     uint16_t firstClusterLow;
     uint32_t fileSize;
-} FAT12_DirEntry;
-#pragma pack(pop)
+} __attribute__((packed)) FAT12_DirEntry;
 
 typedef struct {
     uint16_t FATStartSector;
     uint16_t rootDirStartSector;
     uint16_t dataRegionStartSector;
-    FAT12_DirEntry far* currentDirectoryBuffer;
+    FAT12_DirEntry* currentDirectoryBuffer;
     uint16_t currentDirectoryBufferStartSector;
-    uint8_t far* currentFATSectionBuffer;
+    uint8_t* currentFATSectionBuffer;
 } FAT12_Index;
 
 typedef struct {
@@ -64,12 +60,12 @@ typedef struct {
     uint32_t size;
 } FAT12_FILE;
 
-uint16_t FAT_DRIVER_INIT(DISK* disk, FAT12_Index far* index, uint8_t far* currentDirectoryBuffer, uint8_t far* currentFATSectionBuffer);
+uint16_t FAT_DRIVER_INIT(DISK* disk, FAT12_Index* index, uint8_t* currentDirectoryBuffer, uint8_t* currentFATSectionBuffer);
 
-void readOEM(char far* buffer);
+void readOEM(char* buffer);
 
-void readVolumeLabel(char far* buffer);
+void readVolumeLabel(char* buffer);
 
-uint16_t openFile(DISK* disk, FAT12_Index far* index, FAT12_FILE* fileOut, const char* fileName);
+uint16_t openFile(DISK* disk, FAT12_Index* index, FAT12_FILE* fileOut, const char* fileName);
 
-uint16_t readFile(DISK* disk, FAT12_Index far* index, FAT12_FILE* file, uint8_t far* destination, uint32_t maxSize, uint32_t* bytesRead);
+uint16_t readFile(DISK* disk, FAT12_Index* index, FAT12_FILE* file, uint8_t* destination, uint32_t maxSize, uint32_t* bytesRead);

@@ -16,9 +16,15 @@ Cargo.lock
 *.err
 *.obj
 *.ini
+*.o
 
 # Clion
 .idea
 
 # Vim
 *.vim
+
+# Toolchain
+toolchain/*
+!toolchain/config.mk
+!toolchain/toolchain.mk

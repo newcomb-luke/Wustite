@@ -1,6 +1,6 @@
 #pragma once
 
-#include "stdint.h"
+#include <stdint.h>
 
 enum VideoMode {
 	Text40x25_Gray = 0x00,
@@ -22,10 +22,10 @@ enum VideoMode {
 
 void putc(char c);
 void puts(const char* s);
-void farputs(const char far* s);
 void printf(const char* s);
 void setVideoMode(enum VideoMode m);
 void phexuint8(uint8_t value);
 void phexuint16(uint16_t value);
 void phexuint32(uint32_t value);
-void hexdump(uint8_t far* addr);
+void phexuint64(uint64_t value);
+void hexdump(uint8_t* addr);
