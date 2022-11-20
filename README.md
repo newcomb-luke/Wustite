@@ -27,6 +27,11 @@ A custom toy operating system written mostly in the Rust programming language. T
     - [x] Minimal ELF executable loading
     - [x] Protected mode entry
     - [x] Long mode entry
+      - [x] Enabling PAE
+      - [x] Set 64-bit page table
+      - [x] Set long mode enable bit
+      - [x] Enable paging
+      - [x] Set up 64-bit GDT
     - [ ] BIOS memory map request
     - [ ] Graphics mode setting
 - [ ] Kernel
