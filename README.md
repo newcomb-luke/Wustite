@@ -26,7 +26,7 @@ A custom toy operating system written mostly in the Rust programming language. T
       - [x] Read arbitrary file into memory
     - [x] Minimal ELF executable loading
     - [x] Protected mode entry
-    - [ ] Long mode entry
+    - [x] Long mode entry
     - [ ] BIOS memory map request
     - [ ] Graphics mode setting
 - [ ] Kernel
