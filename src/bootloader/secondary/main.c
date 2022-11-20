@@ -4,6 +4,8 @@
 #include "bdisk.h"
 #include "memory.h"
 #include "elf.h"
+#include "long_mode.h"
+#include "paging.h"
 
 void __attribute__((cdecl)) _start(uint32_t bootDrive) {
 	setVideoMode(Text80x25_Color);
@@ -66,6 +68,20 @@ void __attribute__((cdecl)) _start(uint32_t bootDrive) {
     }
 
     puts("ELF file read.");
+
+    if (!is_cpuid_available() || !is_extended_cpuid_available()) {
+        puts("Kernel requires x86_64.");
+        for (;;) {}
+    }
+
+    puts("CPUID is supported");
+
+    puts("Loading kernel");
+
+    // Set up the page table, even though we don't use it quite yet
+    identityMap(NUM_MEGABYTES_TO_MAP);
+
+    loadAndExecuteELF(fileBuffer);
 
     for (;;) {}
 }

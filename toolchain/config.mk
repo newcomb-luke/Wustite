@@ -10,3 +10,4 @@ export TARGET_LINKFLAGS=
 
 SRC_DIR=src
 BUILD_DIR=$(abspath build)
+KERNEL_BASE_DIR=$(abspath kernel)

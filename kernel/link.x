@@ -1,14 +1,14 @@
-MEMORY
-{
-  RAM : ORIGIN = 0xC0000000, LENGTH = 64K
-}
+ENTRY(_start)
+
+origin = 0x00020000;
 
 SECTIONS
 {
-  .text ORIGIN(RAM) :
-  {
-    *(.text .text.*);
-  } > RAM
-  .data : { *(.data) }
-  .bss : { *(.bss) }
+  . = origin;
+  __KERNEL_LOAD_LOC = .;
+  .text : { *(.text) *(.text.*) }
+  .data : { *(.data) *(.data.*) }
+  .rodata : { *(.rodata) *(.rodata.*) }
+  .bss : { *(.bss) *(.bss.*) }
+  __KERNEL_LOAD_END = .;
 }

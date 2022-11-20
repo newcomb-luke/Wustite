@@ -5,6 +5,7 @@ TARGET_LINKFLAGS += -T linker.ld -nostdlib
 
 SOURCES_C=$(wildcard *.c)
 SOURCES_ASM=$(wildcard *.asm)
+HEADERS=$(wildcard *.h)
 OBJECTS_C=$(patsubst %.c, $(BUILD_DIR)/secondary/c/%.o, $(SOURCES_C))
 OBJECTS_ASM=$(patsubst %.asm, $(BUILD_DIR)/secondary/asm/%.o, $(SOURCES_ASM))
 
@@ -17,10 +18,10 @@ secondary: $(BUILD_DIR)/secondary.bin
 $(BUILD_DIR)/secondary.bin: $(OBJECTS_ASM) $(OBJECTS_C)
 	$(TARGET_LD) $(TARGET_LINKFLAGS) -Wl,-Map=$(BUILD_DIR)/secondary.map -o $@ $^ $(TARGET_LIBS)
 
-$(BUILD_DIR)/secondary/c/%.o: %.c always
+$(BUILD_DIR)/secondary/c/%.o: %.c $(HEADERS) always
 	$(TARGET_CC) $(TARGET_CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/secondary/asm/%.o: %.asm always
+$(BUILD_DIR)/secondary/asm/%.o: %.asm $(HEADERS) always
 	$(TARGET_ASM) $(TARGET_ASMFLAGS) -o $@ $<
 
 always:

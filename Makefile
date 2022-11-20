@@ -39,7 +39,7 @@ $(BUILD_DIR)/boot_floppy.img: bootloader secondary kernel
 # 
 # Kernel
 #
-kernel: $(BUILD_DIR)/kernel.o
+kernel: $(BUILD_DIR)/kernel.o $(KERNEL_BASE_DIR)/link.x $(KERNEL_BASE_DIR)/target.json
 
 $(BUILD_DIR)/kernel.o: always FORCE
 	cd kernel; \
@@ -63,7 +63,7 @@ clean:
 	rm -rf $(BUILD_DIR)/*
 
 run: $(BUILD_DIR)/boot_floppy.img
-	qemu-system-x86_64 -fda $(BUILD_DIR)/boot_floppy.img
+	qemu-system-x86_64 -m 2G -fda $(BUILD_DIR)/boot_floppy.img
 
 debug: $(BUILD_DIR)/boot_floppy.img
 	bochs -f bochs.cfg -q

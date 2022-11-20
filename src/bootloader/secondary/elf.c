@@ -2,6 +2,7 @@
 #include "bio.h"
 #include "string.h"
 #include "math.h"
+#include "long_mode.h"
 
 #define ELF_FILE_MAGIC           0x464C457F
 #define ELF_FILE_32BIT           0x01
@@ -94,12 +95,69 @@ uint16_t readELF(uint8_t* fileBuffer) {
     phexuint64(g_ELF->entryPoint);
     putc('\n');
 
-    uint64_t ph_offset = *(((uint64_t *)&g_ELF->programHeaderTableOffset) + 0);
+    uint64_t ph_offset = g_ELF->programHeaderTableOffset;
     uint16_t phnum = g_ELF->programHeaderTableNumEntries;
 
     _PrintProgramHeaderTable(ph_offset, phnum);
 
     return 0;
+}
+
+void _LoadProgramHeaderEntry(ELF64ProgramHeaderEntry* entry);
+
+void loadAndExecuteELF(uint8_t* fileBuffer) {
+    g_ELF = (ELF64Header*) fileBuffer;
+    uint64_t entryPoint = g_ELF->entryPoint;
+    uint64_t ph_offset = g_ELF->programHeaderTableOffset;
+    uint16_t phnum = g_ELF->programHeaderTableNumEntries;
+
+    ELF64ProgramHeaderEntry* table = (ELF64ProgramHeaderEntry*)(((uint8_t*)g_ELF) + ph_offset);
+
+    for (uint16_t i = 0; i < phnum; i++) {
+        // If this segment is a loadable segment
+        if (table->segmentType == PT_LOAD) {
+            _LoadProgramHeaderEntry(table);
+        }
+        table++;
+    }
+
+    puts("Loaded segments into memory");
+
+    puts("Jumping into long mode");
+
+    long_mode_jump((void*)(entryPoint));
+
+    for (;;) {}
+}
+
+void _LoadProgramHeaderEntry(ELF64ProgramHeaderEntry* entry) {
+    uint64_t offset = entry->offset;
+    uint64_t virtualAddress = entry->virtualAddress;
+    uint64_t sizeInFile = entry->sizeInFile;
+    uint64_t sizeInMemory = entry->sizeInMemory;
+
+    uint8_t* startOfFile = (uint8_t*) g_ELF;
+    uint8_t* segmentPtr = startOfFile + offset;
+    uint8_t* destination = (uint8_t*) virtualAddress;
+
+    memcpy(segmentPtr, destination, sizeInFile);
+
+    uint64_t bytesToZero = sizeInMemory - sizeInFile;
+    uint8_t* bytesToZeroStart = destination + sizeInFile;
+
+    memset(bytesToZeroStart, 0, bytesToZero);
+
+    printf("Loaded 0x");
+    phexuint64(sizeInFile);
+    printf(" bytes into memory at address 0x");
+    phexuint64(virtualAddress);
+    putc('\n');
+
+    printf("Zeroed 0x");
+    phexuint64(bytesToZero);
+    printf(" remaining bytes starting from address ");
+    phexuint64((uint64_t)(uint32_t)bytesToZeroStart);
+    putc('\n');
 }
 
 void _PrintProgramHeaderEntry(ELF64ProgramHeaderEntry* entry);

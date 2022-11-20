@@ -6,7 +6,7 @@ A custom toy operating system written mostly in the Rust programming language. T
 * nasm
 * qemu
 * mtools
-* open watcom 2.0 compiler tools
+* gcc
 
 # Roadmap
 
@@ -24,8 +24,8 @@ A custom toy operating system written mostly in the Rust programming language. T
       - [x] Root directory lookup
       - [x] FAT lookup
       - [x] Read arbitrary file into memory
-    - [ ] Minimal ELF executable loading
-    - [ ] Protected mode entry
+    - [x] Minimal ELF executable loading
+    - [x] Protected mode entry
     - [ ] Long mode entry
     - [ ] BIOS memory map request
     - [ ] Graphics mode setting

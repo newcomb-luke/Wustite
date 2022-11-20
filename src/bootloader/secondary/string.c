@@ -1,29 +1,29 @@
 #include "string.h"
 #include <stddef.h>
 
-void memcpy(const void* srcptr, void* dstptr, uint16_t len) {
+void memcpy(const void* srcptr, void* dstptr, uint32_t len) {
     const uint8_t* src = (const uint8_t*) srcptr;
     uint8_t* dst = (uint8_t*) dstptr;
 
-    for (uint16_t i = 0; i < len; i++) {
+    for (uint32_t i = 0; i < len; i++) {
         dst[i] = src[i];
     }
 }
 
-void memset(void* ptr, uint8_t value, uint16_t len) {
+void memset(void* ptr, uint8_t value, uint32_t len) {
     uint8_t* dst = (uint8_t*) ptr;
 
-    for (uint16_t i = 0; i < len; i++) {
+    for (uint32_t i = 0; i < len; i++) {
         dst[i] = value;
     }
 }
 
-int16_t memcmp(const void* left, const void* right, uint16_t len) {
+int32_t memcmp(const void* left, const void* right, uint32_t len) {
     const char* leftPtr = (const char*) left;
     const char* rightPtr = (const char*) right;
-    int16_t value = 0;
+    int32_t value = 0;
 
-    for (uint16_t i = 0; i < len; i++) {
+    for (uint32_t i = 0; i < len; i++) {
         value += leftPtr[i] - rightPtr[i];
     }
 
@@ -41,8 +41,8 @@ int16_t memcmp(const void* left, const void* right, uint16_t len) {
 //
 // Returns the number of characters actually written to dstptr, not including
 // a null terminator
-uint16_t strncpy(const char* src, char* dst, uint16_t num) {
-    uint16_t written = 0;
+uint32_t strncpy(const char* src, char* dst, uint32_t num) {
+    uint32_t written = 0;
 
     if (dst == NULL) {
         return 0;
@@ -53,7 +53,7 @@ uint16_t strncpy(const char* src, char* dst, uint16_t num) {
         return 0;
     }
 
-    for (uint16_t i = 0; i < num; i++) {
+    for (uint32_t i = 0; i < num; i++) {
         *dst = *src;
 
         written++;
@@ -71,12 +71,12 @@ uint16_t strncpy(const char* src, char* dst, uint16_t num) {
     return written;
 }
 
-const char* strnchr(const char* str, char chr, uint16_t num) {
+const char* strnchr(const char* str, char chr, uint32_t num) {
     if (str == NULL) {
         return NULL;
     }
 
-    for (uint16_t i = 0; i < num; i++) {
+    for (uint32_t i = 0; i < num; i++) {
         if (*str == chr) {
             return str;
         }
@@ -90,10 +90,10 @@ const char* strnchr(const char* str, char chr, uint16_t num) {
     return NULL;
 }
 
-uint16_t strlen(const char* str) {
-    uint16_t len = 0;
+uint32_t strlen(const char* str) {
+    uint32_t len = 0;
 
-    for (uint16_t i = 0; i < UINT16_MAX; i++) {
+    for (uint32_t i = 0; i < UINT32_MAX; i++) {
         if (*str == '\0') {
             return len;
         }

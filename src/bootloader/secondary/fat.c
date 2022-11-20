@@ -35,6 +35,10 @@ uint16_t FAT_DRIVER_INIT(DISK* disk, FAT12_Index* index, uint8_t* currentDirecto
     index->currentDirectoryBuffer = (FAT12_DirEntry*) currentDirectoryBuffer;
     index->currentFATSectionBuffer = currentFATSectionBuffer;
 
+    printf("Initialized FAT driver with buffers starting at 0x");
+    phexuint32((uint32_t)index->currentDirectoryBuffer);
+    putc('\n');
+
     if (DISK_Read(disk, 0, 1, (uint8_t*) (g_FATBootRecord)) != 0) {
         puts("Could not read boot sector");
         return 1;

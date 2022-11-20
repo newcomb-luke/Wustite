@@ -26,3 +26,4 @@ typedef struct {
 } __attribute__((packed)) ELF64Header;
 
 uint16_t readELF(uint8_t* fileBuffer);
+void loadAndExecuteELF(uint8_t* fileBuffer);
