@@ -13,6 +13,10 @@ use crate::entry::BootInfo;
 use drivers::*;
 use video::{Color, TextBuffer};
 
-fn main() {
-    kprintln!("Hello from magical kernel land!");
+fn main(boot_info: &BootInfo) {
+    kprintln!("Boot drive number: 0x{:02x}", boot_info.boot_drive);
+
+    for region in boot_info.memory_regions {
+        kprintln!("Start: 0x{:x}, end: 0x{:x}, kind: {:?}", region.start, region.end, region.kind);
+    }
 }

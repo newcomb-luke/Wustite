@@ -1,25 +1,21 @@
 use crate::{
     keprintln,
-    memory::{MemoryRegion, MemoryRegionKind},
+    entry::memory::{MemoryRegion, MemoryRegionKind},
 };
 use core::panic::PanicInfo;
 
-/*
 const BOOT_DRIVE_NUMBER_PTR: *const u32 = 0x00070000 as *const u32;
-const NUM_SMAP_ENTRIES_PTR: *const u32 = unsafe { BOOT_DRIVE_NUMBER_PTR.offset(1) };
-const START_SMAP_ENTRIES_PTR: *const RawMemoryRegion =
-    unsafe { NUM_SMAP_ENTRIES_PTR.offset(1) as *const RawMemoryRegion };
+const NUM_SMAP_ENTRIES_PTR: *const u32 = 0x00070004 as *const u32;
+const START_SMAP_ENTRIES_PTR: *const RawMemoryRegion = 0x00070008 as *const RawMemoryRegion;
 const MAX_SMAP_ENTRIES: usize = 50;
-*/
 
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
-    /*
     let num_reported_memory_regions = *NUM_SMAP_ENTRIES_PTR;
     let boot_drive = *BOOT_DRIVE_NUMBER_PTR;
 
     let mut num_memory_regions = 0;
-    let memory_regions_start = 0x00000000 as *mut MemoryRegion;
+    let memory_regions_start = 0x00000004 as *mut MemoryRegion;
     let mut next_memory_region = memory_regions_start;
     let mut next_raw_memory_region = START_SMAP_ENTRIES_PTR;
 
@@ -119,8 +115,6 @@ pub unsafe extern "C" fn _start() -> ! {
     };
 
     crate::main(&boot_info);
-    */
-    crate::main();
 
     loop {}
 }

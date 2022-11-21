@@ -119,7 +119,26 @@ impl TextBuffer {
         if c == '\n' {
             self.line += 1;
             self.col = 0;
+
+            if self.line >= NUM_ROWS {
+
+                for row in 1..NUM_ROWS {
+                    for col in 0..NUM_COLUMNS {
+                        let offset = (col + NUM_COLUMNS * row) as isize;
+                        let previous = (col + NUM_COLUMNS * (row - 1)) as isize;
+
+                        unsafe {
+                            *VIDEO_MEMORY.offset(previous) = *(VIDEO_MEMORY).offset(offset);
+                        }
+                    }
+                }
+
+                self.line = NUM_ROWS - 1;
+                self.clear_line(self.line);
+            }
+
             self.set_cursor(0, self.line);
+
         } else if c == '\r' {
             self.col = 0;
             self.set_cursor(0, self.line);
@@ -134,6 +153,16 @@ impl TextBuffer {
             self.increment_pos();
 
             self.set_cursor(self.col, self.line);
+        }
+    }
+
+    fn clear_line(&self, line: usize) {
+        let offset = (self.col + NUM_COLUMNS * self.line) as isize;
+
+        for i in 0..(NUM_COLUMNS as isize) {
+            unsafe {
+                *VIDEO_MEMORY.offset(offset + i) = self.value_from_char(' ');
+            }
         }
     }
 
