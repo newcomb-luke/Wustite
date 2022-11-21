@@ -121,7 +121,6 @@ impl TextBuffer {
             self.col = 0;
 
             if self.line >= NUM_ROWS {
-
                 for row in 1..NUM_ROWS {
                     for col in 0..NUM_COLUMNS {
                         let offset = (col + NUM_COLUMNS * row) as isize;
@@ -138,7 +137,6 @@ impl TextBuffer {
             }
 
             self.set_cursor(0, self.line);
-
         } else if c == '\r' {
             self.col = 0;
             self.set_cursor(0, self.line);

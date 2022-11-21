@@ -1,6 +1,6 @@
 use crate::{
-    keprintln,
     entry::memory::{MemoryRegion, MemoryRegionKind},
+    keprintln,
 };
 use core::panic::PanicInfo;
 
@@ -113,6 +113,8 @@ pub unsafe extern "C" fn _start() -> ! {
         memory_regions: memory_regions_slice,
         boot_drive,
     };
+
+    crate::interrupts::init_idt();
 
     crate::main(&boot_info);
 
