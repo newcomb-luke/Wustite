@@ -65,6 +65,69 @@ global _BIOS_Drive_ReadSectors
     and %3, 0xF
 %endmacro
 
+; int32_t _BIOS_Memory_GetNextSegment(SMAPEntry* entry, uint32_t* contID);
+global _BIOS_Memory_GetNextSegment
+_BIOS_Memory_GetNextSegment:
+    [bits 32]
+    push ebp
+    mov ebp, esp
+
+    ; [ebp + 8] - entry pointer
+    ; [ebp + 12] - continuation id pointer
+
+	x86_EnterRealMode
+	[bits 16]
+
+	push ebx
+	push ecx
+	push edx
+	push esi
+	push edi
+	push ds
+	push es
+
+    LinearToSegmentOffset [bp + 12], ds, esi, si
+    mov ebx, [ds:si]
+    ; Magic number that says, yes we want this data
+    mov edx, 0x534D4150
+    LinearToSegmentOffset [bp + 8], es, edi, di
+    mov [es:di + 20], dword 1	; force a valid ACPI 3.X entry
+    mov ecx, 24
+    mov eax, 0x0000E820
+    int 0x15
+    jc .failed
+    cmp eax, edx		; on success, eax must have been reset to "SMAP"
+    jne .failed
+    jmp .success
+
+.failed:
+    mov eax, -1
+    jmp .done
+.success:
+    ; ecx contains the number of bytes read into our structure
+    mov eax, ecx
+    ; Set our continuation id value
+    mov [ds:si], ebx
+.done:
+    pop es
+    pop ds
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+
+    push eax
+
+	x86_EnterProtectedMode
+	[bits 32]
+
+	pop eax
+
+    mov esp, ebp
+    pop ebp
+    ret
+
 ; args: character
 _BIOS_Video_WriteCharTeletype:
     [bits 32]

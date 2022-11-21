@@ -6,6 +6,7 @@
 #include "elf.h"
 #include "long_mode.h"
 #include "paging.h"
+#include "smap.h"
 
 void __attribute__((cdecl)) _start(uint32_t bootDrive) {
 	setVideoMode(Text80x25_Color);
@@ -80,6 +81,15 @@ void __attribute__((cdecl)) _start(uint32_t bootDrive) {
 
     // Set up the page table, even though we don't use it quite yet
     identityMap(NUM_MEGABYTES_TO_MAP);
+
+    // Store the boot drive in the standard predefined memory location
+    uint32_t* bootDrivePtr = (uint32_t*)(BOOT_DRIVE_MEM_LOC);
+    *bootDrivePtr = bootDrive;
+
+    uint32_t* smapEntryCount = (uint32_t*)(SMAP_NUM_ENTRIES_LOC);
+    SMAPEntry* smapEntriesStart = (SMAPEntry*)(SMAP_FIRST_ENTRY_LOC);
+
+    detectMemory(smapEntryCount, smapEntriesStart);
 
     loadAndExecuteELF(fileBuffer);
 

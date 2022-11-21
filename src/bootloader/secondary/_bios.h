@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include "smap.h"
 
 void __attribute__((cdecl)) _BIOS_Video_WriteCharTeletype(char c);
 void __attribute__((cdecl)) _BIOS_Video_SetVideoMode(uint8_t mode);
@@ -16,3 +17,4 @@ uint16_t __attribute__((cdecl)) _BIOS_Drive_ReadSectors(uint8_t driveNumber,
                                         uint8_t sector,
                                         uint8_t sectorCount,
                                         uint8_t* dataDestination);
+int32_t __attribute__((cdecl)) _BIOS_Memory_GetNextSegment(SMAPEntry* entry, uint32_t* contID);

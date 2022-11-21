@@ -29,6 +29,12 @@
 #define ENTRIES_PER_PAGE_TABLE                    512
 #define SIZE_OF_SINGLE_PAGE                       4096
 
+#define BOOT_DRIVE_MEM_LOC                        0x70000
+#define SMAP_ENTRIES_MEM_START                    BOOT_DRIVE_MEM_LOC + 4
+#define SMAP_NUM_ENTRIES_LOC                      SMAP_ENTRIES_MEM_START
+#define SMAP_FIRST_ENTRY_LOC                      SMAP_NUM_ENTRIES_LOC + 4
+#define MAX_SMAP_ENTRIES                          2730
+
 // Target memory map:
 // 0x00000000 - 0x000003FF - 1 KiB long - Real Mode IVT
 // 0x00000400 - 0x000004FF - 256 bytes long - BIOS Data Area
@@ -62,7 +68,7 @@
 // 0x00010000 - 0x00020000 - Bootloader initialized page table area
 // 0x00020000 - 0x00040000 - Kernel load location (assuming size of 128 KiB)
 // 0x00040000 - 0x00070000 - Kernel stack begin
-// 0x00070000 - 0x0007FFFF - Remaining Conventional memory
+// 0x00070000 - 0x0007FFFF - Stage2->Kernel Data Area
 // 0x00080000 - 0x0009FFFF - 128 KiB - Extended BIOS Data Area
 // 0x000A0000 - 0x000BFFFF - 128 KiB - Video Display Memory
 // 0x000C0000 - 0x000C7FFF - 32 KiB - Video BIOS
