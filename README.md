@@ -10,14 +10,14 @@ A custom toy operating system written mostly in the Rust programming language. T
 
 # Roadmap
 
-- [ ] Bootloader
+- [x] Bootloader
   - [x] Stage 1
     - [x] FAT12 header in boot sector
     - [x] Disk read
     - [x] Screen BIOS print routines
     - [x] Minimal FAT12 read support
     - [x] Second stage binary file loading
-  - [ ] Stage 2
+  - [x] Stage 2
     - [x] Disk read
     - [x] BIOS print routines
     - [x] Minimal FAT12 read support
@@ -32,9 +32,12 @@ A custom toy operating system written mostly in the Rust programming language. T
       - [x] Set long mode enable bit
       - [x] Enable paging
       - [x] Set up 64-bit GDT
-    - [ ] BIOS memory map request
-    - [ ] Graphics mode setting
+    - [x] BIOS memory map request
+    - [x] Providing boot info to kernel
 - [ ] Kernel
+  - [x] Bare bones printing
+    - [x] VGA text buffer support
+    - [x] Print macros
   - [ ] Disk drivers
   - [ ] FAT12 read only drivers
       - [ ] Root directory lookup
