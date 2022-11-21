@@ -38,6 +38,8 @@ A custom toy operating system written mostly in the Rust programming language. T
   - [x] Bare bones printing
     - [x] VGA text buffer support
     - [x] Print macros
+  - [x] Panic handling
+  - [ ] Interrupt handling
   - [ ] Disk drivers
   - [ ] FAT12 read only drivers
       - [ ] Root directory lookup
