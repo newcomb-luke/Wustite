@@ -7,6 +7,7 @@ A custom toy operating system written mostly in the Rust programming language. T
 * qemu
 * mtools
 * gcc
+* cargo
 
 # Roadmap
 
