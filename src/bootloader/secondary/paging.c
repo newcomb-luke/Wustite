@@ -1,5 +1,6 @@
 #include "paging.h"
 #include "memory.h"
+#include "bio.h"
 
 void identityMap(uint32_t numMegabytes) {
     uint64_t* pageTablesBegin = (uint64_t*) PAGE_TABLES_MEM_START;
@@ -41,8 +42,19 @@ void identityMap(uint32_t numMegabytes) {
 
     for (uint32_t pageTable = 0; pageTable < numRegularPageTables; pageTable++) {
         for (uint32_t entry = 0; entry < ENTRIES_PER_PAGE_TABLE; entry++) {
+            uint32_t flagBits = 0b00000011;
+            // The kernel stack here lies on the beginning of a page boundary.
+            // We want to leave what is called a "guard page" where the very very
+            // bottom of the stack memory (the stack grows down) is not mapped.
+            // This will cause a page fault if we attempt to overflow the stack
+            if (currentPhysicalAddress == KERNEL_STACK_END) {
+                // Set it as not present, and not writable if that matters
+                flagBits = 0b00000010;
+            } else {
+                flagBits = 0b00000011;
+            }
             // Set the physical address, and writable and present bits
-            *(currentPageBegin + entry) = currentPhysicalAddress + 0b00000011;
+            *(currentPageBegin + entry) = currentPhysicalAddress + flagBits;
             currentPhysicalAddress += SIZE_OF_SINGLE_PAGE;
         }
         // Do the next table

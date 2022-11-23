@@ -23,7 +23,10 @@ void __attribute__((cdecl)) _start(uint32_t bootDrive) {
     puts("Disk initialized");
 
     // Our FAT file system starts where we were loaded into memory
-    if (FAT_DRIVER_INIT(&disk, indexPtr, (uint8_t*)(FAT_CURRENT_DIRECTORY_BUFFER_START), (uint8_t*)(FAT_CURRENT_FAT_SECTION_BUFFER_START)) != 0) {
+    if (FAT_DRIVER_INIT(&disk, indexPtr, (uint8_t*)(FAT_BOOT_RECORD_BUFFER_START),
+                                         (uint8_t*)(FAT_CURRENT_DIRECTORY_BUFFER_START),
+                                         (uint8_t*)(FAT_CURRENT_FAT_SECTION_BUFFER_START),
+                                         (uint8_t*)(FAT_LOAD_BUFFER_START)) != 0) {
         puts("Error initializing FAT driver");
         for (;;) {}
     }
@@ -33,7 +36,7 @@ void __attribute__((cdecl)) _start(uint32_t bootDrive) {
     // Print the volume label as a test
     printf("Volume label: ");
     char volumeLabel[11];
-    readVolumeLabel((char*) &volumeLabel);
+    readVolumeLabel(&index, (char*) &volumeLabel);
 
     for (int i = 0; i < 11; i++) {
         putc(volumeLabel[i]);
@@ -42,7 +45,7 @@ void __attribute__((cdecl)) _start(uint32_t bootDrive) {
     putc('\n');
 
     FAT12_FILE file;
-    uint8_t* fileBuffer = (uint8_t*)(FAT_FILE_BUFFER_START);
+    uint8_t* kernelLoadBuffer = (uint8_t*)(KERNEL_READ_LOCATION_START);
     uint32_t bytesRead = 0;
     const char* fileName = "kernel.o";
 
@@ -52,7 +55,12 @@ void __attribute__((cdecl)) _start(uint32_t bootDrive) {
         for (;;) {}
     }
 
-    if (readFile(&disk, indexPtr, &file, fileBuffer, file.size, &bytesRead) != 0) {
+    printf("File size: 0x");
+    phexuint32(
+        file.size);
+    putc('\n');
+
+    if (readFile(&disk, indexPtr, &file, kernelLoadBuffer, file.size, &bytesRead) != 0) {
         printf("Failed to read ");
         puts(fileName);
         for (;;) {}
@@ -62,7 +70,7 @@ void __attribute__((cdecl)) _start(uint32_t bootDrive) {
     phexuint32(bytesRead);
     putc('\n');
 
-    if (readELF(fileBuffer) != 0) {
+    if (readELF(kernelLoadBuffer) != 0) {
         printf("Failed to read ");
         puts(fileName);
         for (;;) {}
@@ -91,7 +99,7 @@ void __attribute__((cdecl)) _start(uint32_t bootDrive) {
 
     detectMemory(smapEntryCount, smapEntriesStart);
 
-    loadAndExecuteELF(fileBuffer);
+    loadAndExecuteELF(kernelLoadBuffer);
 
     for (;;) {}
 }

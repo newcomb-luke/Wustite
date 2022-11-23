@@ -1,6 +1,6 @@
 [bits 32]
 
-KERNEL_STACK_START equ 0x00070000
+KERNEL_STACK_START equ 0x00200000
 
 global long_mode_jump
 long_mode_jump:

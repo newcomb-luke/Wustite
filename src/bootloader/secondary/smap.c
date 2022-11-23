@@ -12,7 +12,6 @@ void detectMemory(uint32_t* count, SMAPEntry* entryTable) {
     *(entryTable + *count) = buffer;
     (*count)++;
 
-    /*
     printf("Entry base: 0x");
     phexuint32(buffer.baseHigh);
     phexuint32(buffer.baseLow);
@@ -22,11 +21,9 @@ void detectMemory(uint32_t* count, SMAPEntry* entryTable) {
     printf(", type: 0x");
     phexuint32(buffer.type);
     putc('\n');
-    */
 
     while (bytesRead > 0 && continuation != 0) {
         bytesRead = _BIOS_Memory_GetNextSegment(&buffer, &continuation);
-        /*
         printf("Entry base: 0x");
         phexuint32(buffer.baseHigh);
         phexuint32(buffer.baseLow);
@@ -36,7 +33,6 @@ void detectMemory(uint32_t* count, SMAPEntry* entryTable) {
         printf(", type: 0x");
         phexuint32(buffer.type);
         putc('\n');
-        */
         // Only these types are valid
         if (buffer.type > 0 && buffer.type < 6) {
             *(entryTable + *count) = buffer;

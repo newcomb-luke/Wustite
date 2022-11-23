@@ -1,6 +1,6 @@
 ENTRY(_start)
 
-origin = 0x00020000;
+origin = 0x00100000;
 
 SECTIONS
 {

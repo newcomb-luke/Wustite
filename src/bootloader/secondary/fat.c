@@ -1,13 +1,16 @@
 #include "fat.h"
 #include <stdint.h>
 #include <stddef.h>
+#include "math.h"
+#include "memory.h"
 #include "string.h"
 #include "bio.h"
 #include "ctype.h"
 #include "bdisk.h"
 
-#define SECTOR_SIZE 512
-#define FILE_NAME_LEN 11
+#define SECTOR_SIZE     512
+#define FILE_NAME_LEN   11
+#define DIR_ENTRY_SIZE  32
 
 typedef enum {
     READ_ONLY = 0x01,
@@ -25,39 +28,38 @@ typedef enum {
     LAST_CLUSTER = 0xFF8,
 } __attribute__((packed)) FAT12Cluster;
 
-// Just in case something horrible happens to the boot sector
-static uint8_t g_FATBootRecordBuffer[SECTOR_SIZE];
-static FAT12_BootRecord* g_FATBootRecord = (FAT12_BootRecord*) &g_FATBootRecordBuffer;
-
 uint16_t _LoadRootDirectory(DISK* disk, FAT12_Index* index);
 
-uint16_t FAT_DRIVER_INIT(DISK* disk, FAT12_Index* index, uint8_t* currentDirectoryBuffer, uint8_t* currentFATSectionBuffer) {
-    index->currentDirectoryBuffer = (FAT12_DirEntry*) currentDirectoryBuffer;
+uint16_t FAT_DRIVER_INIT(DISK* disk,
+                         FAT12_Index* index,
+                         uint8_t* bootRecordBuffer,
+                         uint8_t* directoryBuffer,
+                         uint8_t* currentFATSectionBuffer,
+                         uint8_t* loadBuffer) {
+    index->directoryBuffer = (FAT12_DirEntry*) directoryBuffer;
     index->currentFATSectionBuffer = currentFATSectionBuffer;
+    index->bootRecord  = (FAT12_BootRecord*) bootRecordBuffer;
+    index->loadBuffer = loadBuffer;
 
-    printf("Initialized FAT driver with buffers starting at 0x");
-    phexuint32((uint32_t)index->currentDirectoryBuffer);
-    putc('\n');
-
-    if (DISK_Read(disk, 0, 1, (uint8_t*) (g_FATBootRecord)) != 0) {
+    if (DISK_Read(disk, 0, 1, bootRecordBuffer) != 0) {
         puts("Could not read boot sector");
         return 1;
     }
 
-    index->FATStartSector = g_FATBootRecord->bdb_reserved_sectors;
+    index->FATStartSector = index->bootRecord->bdb_reserved_sectors;
 
-    index->rootDirStartSector = index->FATStartSector + g_FATBootRecord->bdb_fat_count * g_FATBootRecord->bdb_sectors_per_fat;
+    index->rootDirStartSector = index->FATStartSector + index->bootRecord->bdb_fat_count * index->bootRecord->bdb_sectors_per_fat;
+    index->rootDirSizeInSectors = ((index->bootRecord->bdb_dir_entries_count * 32) + (index->bootRecord->bdb_bytes_per_sector - 1)) / SECTOR_SIZE;
 
     // This calculation rounds up to the nearest whole sector, which is how the data is stored if it doesn't fit neatly
-    index->dataRegionStartSector = index->rootDirStartSector + ((g_FATBootRecord->bdb_dir_entries_count * 32) + (g_FATBootRecord->bdb_bytes_per_sector - 1)) / SECTOR_SIZE;
+    index->dataRegionStartSector = index->rootDirStartSector + index->rootDirSizeInSectors;
 
-    // Our current directory buffer is 2 sectors long, even if the directory entry is larger/smaller
     if (_LoadRootDirectory(disk, index) != 0) {
         puts("Loading root directory failed");
         return 2;
     }
 
-    if (DISK_Read(disk, index->FATStartSector, g_FATBootRecord->bdb_sectors_per_fat, (uint8_t*) index->currentFATSectionBuffer) != 0) {
+    if (DISK_Read(disk, index->FATStartSector, index->bootRecord->bdb_sectors_per_fat, (uint8_t*) index->currentFATSectionBuffer) != 0) {
         puts("Loading FAT failed");
         return 3;
     }
@@ -66,28 +68,53 @@ uint16_t FAT_DRIVER_INIT(DISK* disk, FAT12_Index* index, uint8_t* currentDirecto
 }
 
 uint32_t _ClusterToLBA(FAT12_Index* index, uint16_t cluster) {
-    return index->dataRegionStartSector + (cluster - 2) * g_FATBootRecord->bdb_sectors_per_cluster;
+    return index->dataRegionStartSector + (cluster - 2) * index->bootRecord->bdb_sectors_per_cluster;
 }
 
-void readOEM(char* buffer) {
-    memcpy((void*) &(g_FATBootRecord->bdb_oem_id), (void*) buffer, 8);
+void readOEM(FAT12_Index* index, char* buffer) {
+    memcpy((void*) &(index->bootRecord->bdb_oem_id), (void*) buffer, 8);
 }
 
-void readVolumeLabel(char* buffer) {
-    memcpy((void*) &g_FATBootRecord->ebr_volume_label, (void*) buffer, 11);
+void readVolumeLabel(FAT12_Index* index, char* buffer) {
+    memcpy((void*) &index->bootRecord->ebr_volume_label, (void*) buffer, 11);
+}
+
+uint16_t _LoadSector(DISK* disk, FAT12_Index* index, uint32_t lba, uint8_t* destination) {
+    if (DISK_Read(disk, lba, 1, index->loadBuffer)) {
+        puts("Failed in _LoadSector DISK_READ");
+        return 1;
+    }
+    memcpy((void*)index->loadBuffer, (void*)destination, SECTOR_SIZE);
+    return 0;
+}
+
+uint16_t _LoadSectors(DISK* disk, FAT12_Index* index, uint32_t startLBA, uint16_t sectorsToRead, uint8_t* destination) {
+    for (uint32_t lba = startLBA; lba < startLBA + sectorsToRead; lba++) {
+        if (_LoadSector(disk, index, lba, destination) != 0) {
+            puts("Failure in _LoadSectors");
+            return 1;
+        }
+        destination += SECTOR_SIZE;
+    }
+    return 0;
 }
 
 uint16_t _LoadRootDirectory(DISK* disk, FAT12_Index* index) {
-    if (DISK_Read(disk, index->rootDirStartSector, 2, (uint8_t*) index->currentDirectoryBuffer) != 0) {
+    uint16_t sectorsToLoad = min(index->rootDirSizeInSectors, FAT_CURRENT_DIRECTORY_BUFFER_SIZE / SECTOR_SIZE);
+    if (_LoadSectors(disk, index, 
+                            index->rootDirStartSector, 
+                            sectorsToLoad,
+                            (uint8_t*)(index->directoryBuffer)) != 0) {
+        puts("Failure in _LoadRootDirectory");
         return 1;
     }
 
-    index->currentDirectoryBufferStartSector = index->rootDirStartSector;
+    index->directoryBufferStartSector = index->rootDirStartSector;
 
     return 0;
 }
 
-uint16_t _CStrTo8Point3(const uint8_t* fileName, uint8_t* nameBuffer) {
+uint16_t _CStrTo8Point3(const char* fileName, char* nameBuffer) {
     uint16_t nameLen = strlen(fileName);
 
     // size of 12 counts the . that isn't present in the 8.3 filename
@@ -96,7 +123,7 @@ uint16_t _CStrTo8Point3(const uint8_t* fileName, uint8_t* nameBuffer) {
         return 1;
     }
 
-    const uint8_t* sep = strnchr(fileName, '.', FILE_NAME_LEN + 1);
+    const char* sep = strnchr(fileName, '.', FILE_NAME_LEN + 1);
 
     memset((void*) nameBuffer, ' ', FILE_NAME_LEN);
 
@@ -108,7 +135,7 @@ uint16_t _CStrTo8Point3(const uint8_t* fileName, uint8_t* nameBuffer) {
         // Just copy the plain name over
         memcpy((void*) fileName, (void*) nameBuffer, nameLen);
     } else {
-        uint8_t namePartLen = (uint8_t)(sep - (uint8_t*) fileName);
+        uint8_t namePartLen = (uint8_t)(sep - fileName);
         // -1 for the dot before the file extension
         uint8_t extPartLen = nameLen - namePartLen - 1;
 
@@ -117,7 +144,7 @@ uint16_t _CStrTo8Point3(const uint8_t* fileName, uint8_t* nameBuffer) {
             return 3;
         }
 
-        const uint8_t* extPtr = &fileName[namePartLen + 1];
+        const char* extPtr = &fileName[namePartLen + 1];
 
         memcpy((void*) fileName, (void*) nameBuffer, namePartLen);
 
@@ -131,13 +158,24 @@ uint16_t _CStrTo8Point3(const uint8_t* fileName, uint8_t* nameBuffer) {
     return 0;
 }
 
-FAT12_DirEntry* _FindEntryInRootDirectory(DISK* disk, FAT12_Index* index, uint8_t* name) {
+FAT12_DirEntry* _FindEntryInRootDirectory(DISK* disk, FAT12_Index* index, char* name) {
+    if (_LoadRootDirectory(disk, index) != 0) {
+        puts("Failed to re-load root directory while finding entry");
+        return NULL;
+    }
+
+    uint16_t currentRootDirStartSector = index->rootDirStartSector;
+
+    uint16_t directoriesPerBuffer = FAT_CURRENT_DIRECTORY_BUFFER_SIZE / DIR_ENTRY_SIZE;
+    int16_t rootDirSectorsRemaining = index->rootDirSizeInSectors - FAT_CURRENT_DIRECTORY_BUFFER_SIZE / SECTOR_SIZE;
+
     for(;;) {
-        // Our entry buffer can store up to 32 entries.
-        // If we read all 32, and there is no entry marking the end,
-        // then we have to load the next section of it into the buffer.
-        for (int i = 0; i < 32; i++) {
-            FAT12_DirEntry* entry = (FAT12_DirEntry*) &index->currentDirectoryBuffer[i];
+        // Our current root directory buffer can store 9 sectors of
+        // information. This means that we can store up to 144 directory
+        // entries at one time. If the file we are looking for isn't in
+        // the ones we loaded first, we load the second set, if there is one.
+        for (int i = 0; i < directoriesPerBuffer; i++) {
+            FAT12_DirEntry* entry = (FAT12_DirEntry*) &index->directoryBuffer[i];
 
             // This marks the end of the directory table
             if (entry->entryName[0] == '\0') {
@@ -171,10 +209,18 @@ FAT12_DirEntry* _FindEntryInRootDirectory(DISK* disk, FAT12_Index* index, uint8_
             }
         }
 
-        // Read the next section of it
-        index->currentDirectoryBufferStartSector += 2;
+        if (rootDirSectorsRemaining < 0) {
+            puts("Reading root directory overflowed and did not find end directory entry");
+            return NULL;
+        }
 
-        if (DISK_Read(disk, index->currentDirectoryBufferStartSector, 2, (uint8_t*) index->currentDirectoryBuffer) != 0) {
+        // Read the next section of it
+        currentRootDirStartSector += min(rootDirSectorsRemaining, FAT_CURRENT_DIRECTORY_BUFFER_SIZE / SECTOR_SIZE);
+        rootDirSectorsRemaining -= FAT_CURRENT_DIRECTORY_BUFFER_SIZE / SECTOR_SIZE;
+
+        if (_LoadSectors(disk, index, currentRootDirStartSector, 
+                                               FAT_CURRENT_DIRECTORY_BUFFER_SIZE / SECTOR_SIZE,
+                                               (uint8_t*) index->directoryBuffer) != 0) {
             puts("Failed to read next section of directory");
             return NULL;
         }
@@ -184,16 +230,16 @@ FAT12_DirEntry* _FindEntryInRootDirectory(DISK* disk, FAT12_Index* index, uint8_
 }
 
 uint16_t openFile(DISK* disk, FAT12_Index* index, FAT12_FILE* fileOut, const char* fileName) {
-    uint8_t FAT12FileNameBuffer[FILE_NAME_LEN];
+    char FAT12FileNameBuffer[FILE_NAME_LEN];
 
     // We will always begin by re-loading the root directory
     if (_LoadRootDirectory(disk, index) != 0) {
         return 1;
     }
 
-    _CStrTo8Point3(fileName, &FAT12FileNameBuffer);
+    _CStrTo8Point3(fileName, (char*)&FAT12FileNameBuffer);
 
-    FAT12_DirEntry* entry = _FindEntryInRootDirectory(disk, index, &FAT12FileNameBuffer);
+    FAT12_DirEntry* entry = _FindEntryInRootDirectory(disk, index, (char*)&FAT12FileNameBuffer);
 
     if (entry == NULL) {
         return 2;
@@ -203,6 +249,9 @@ uint16_t openFile(DISK* disk, FAT12_Index* index, FAT12_FILE* fileOut, const cha
         puts("Subdirectories are not supported");
         return 3;
     }
+
+    printf("Found ");
+    puts(fileName);
 
     fileOut->startCluster = entry->firstClusterLow;
     fileOut->currentCluster = entry->firstClusterLow;
@@ -214,15 +263,44 @@ uint16_t openFile(DISK* disk, FAT12_Index* index, FAT12_FILE* fileOut, const cha
 uint16_t _ReadCluster(DISK* disk, FAT12_Index* index, uint16_t cluster, uint8_t* destination) {
     uint32_t lba = _ClusterToLBA(index, cluster);
 
-    return DISK_Read(disk, lba, g_FATBootRecord->bdb_sectors_per_cluster, (uint8_t*) destination);
+    return _LoadSectors(disk,
+                        index,
+                        lba,
+                        index->bootRecord->bdb_sectors_per_cluster,
+                        destination);
 }
 
 uint32_t _DetermineSectorInFAT(uint16_t cluster) {
     return (cluster * 12) / SECTOR_SIZE;
 }
 
+int32_t _LoadFATSectors(DISK* disk, FAT12_Index* index, uint32_t requestedCluster) {
+    uint32_t sector = _DetermineSectorInFAT(requestedCluster);
+    uint32_t lba = sector + index->FATStartSector;
+
+    printf("Cluster 0x");
+    phexuint32(requestedCluster);
+    printf(" exists in FAT sector ");
+    phexuint32(sector);
+    putc('\n');
+
+    if (_LoadSectors(disk, index, lba, FAT_CURRENT_FAT_SECTION_BUFFER_SIZE / SECTOR_SIZE, index->currentFATSectionBuffer) != 0) {
+        return -1;
+    }
+
+    return (sector * SECTOR_SIZE) / 12;
+}
+
 uint16_t readFile(DISK* disk, FAT12_Index* index, FAT12_FILE* file, uint8_t* destination, uint32_t maxSize, uint32_t* bytesRead) {
     uint32_t readSize = 0;
+
+    uint32_t currentFATBufferStartSector = _DetermineSectorInFAT(file->currentCluster);
+
+    uint32_t fatIndexOffset = _LoadFATSectors(disk, index, file->currentCluster);
+
+    printf("FAT index offset: ");
+    phexuint32(fatIndexOffset);
+    putc('\n');
 
     if (file->startCluster == file->currentCluster) {
         if (_ReadCluster(disk, index, file->startCluster, destination) != 0) {
@@ -230,19 +308,43 @@ uint16_t readFile(DISK* disk, FAT12_Index* index, FAT12_FILE* file, uint8_t* des
             return 3;
         }
 
-        readSize = g_FATBootRecord->bdb_sectors_per_cluster * SECTOR_SIZE;
-        destination += (g_FATBootRecord->bdb_sectors_per_cluster) * (SECTOR_SIZE);
+        readSize = index->bootRecord->bdb_sectors_per_cluster * SECTOR_SIZE;
+        destination += (index->bootRecord->bdb_sectors_per_cluster) * (SECTOR_SIZE);
     }
 
     while (readSize < maxSize) {
+        uint32_t currentSectorInFAT = _DetermineSectorInFAT(file->currentCluster);
+        uint32_t relativeSectorInFATBuffer = currentSectorInFAT - currentFATBufferStartSector;
+
+        if (relativeSectorInFATBuffer >= (FAT_CURRENT_FAT_SECTION_BUFFER_SIZE / SECTOR_SIZE) - 1) {
+            printf("NEEDS MORE: Bytes read: 0x");
+            phexuint32(readSize);
+            putc('\n');
+
+            currentFATBufferStartSector = _DetermineSectorInFAT(file->currentCluster);
+            fatIndexOffset = _LoadFATSectors(disk, index, file->currentCluster);
+
+            printf("New sector start: ");
+            phexuint32(currentFATBufferStartSector);
+            putc('\n');
+
+            printf("FAT index offset: ");
+            phexuint32(fatIndexOffset);
+            putc('\n');
+
+            printf("TODO!: Implement FAT sector swapping");
+
+            for (;;) {}
+        }
+
         uint32_t fatIndex = (file->currentCluster * 3) / 2;
         uint32_t dataCluster;
         if (file->currentCluster % 2 == 0) {
             // It is more "aligned", we get to just read the next 3 nibbles
-            dataCluster = (*((uint16_t*)((uint8_t*)(index->currentFATSectionBuffer) + fatIndex))) & 0x0FFF;
+            dataCluster = (*((uint16_t*)((uint8_t*)(index->currentFATSectionBuffer) + fatIndex - fatIndexOffset))) & 0x0FFF;
         } else {
             // We have to shift the data over
-            dataCluster = (*((uint16_t*)((uint8_t*)(index->currentFATSectionBuffer) + fatIndex))) >> 4;
+            dataCluster = (*((uint16_t*)((uint8_t*)(index->currentFATSectionBuffer) + fatIndex - fatIndexOffset))) >> 4;
         }
 
         if (dataCluster == 0) {
@@ -260,8 +362,8 @@ uint16_t readFile(DISK* disk, FAT12_Index* index, FAT12_FILE* file, uint8_t* des
             return 1;
         }
 
-        readSize += g_FATBootRecord->bdb_sectors_per_cluster * SECTOR_SIZE;
-        destination += g_FATBootRecord->bdb_sectors_per_cluster * SECTOR_SIZE;
+        readSize += index->bootRecord->bdb_sectors_per_cluster * SECTOR_SIZE;
+        destination += index->bootRecord->bdb_sectors_per_cluster * SECTOR_SIZE;
 
         file->currentCluster = dataCluster;
     }

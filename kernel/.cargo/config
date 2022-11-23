@@ -1,4 +1,4 @@
 
 [build]
 target = "target.json"
-rustflags = ["-C", "link-arg=-Tlink.x"]
+rustflags = ["-C", "link-arg=-Tlink.x", "-C", "link-arg=-Map=kernel.map"]

@@ -54,9 +54,13 @@ pub fn _kprint(args: core::fmt::Arguments) {
 #[doc(hidden)]
 pub fn _keprint(args: core::fmt::Arguments) {
     use core::fmt::Write;
-    TEXT_BUFFER.lock().set_fg(ERROR_FG);
-    TEXT_BUFFER.lock().write_fmt(args).unwrap();
-    TEXT_BUFFER.lock().set_fg(REGULAR_FG);
+    {
+        let mut buffer = TEXT_BUFFER.lock();
+
+        buffer.set_fg(ERROR_FG);
+        buffer.write_fmt(args).unwrap();
+        buffer.set_fg(REGULAR_FG);
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -127,7 +131,7 @@ impl TextBuffer {
                         let previous = (col + NUM_COLUMNS * (row - 1)) as isize;
 
                         unsafe {
-                            *VIDEO_MEMORY.offset(previous) = *(VIDEO_MEMORY).offset(offset);
+                            VIDEO_MEMORY.offset(previous).write_volatile((VIDEO_MEMORY).offset(offset).read_volatile());
                         }
                     }
                 }
@@ -136,7 +140,7 @@ impl TextBuffer {
                 self.clear_line(self.line);
             }
 
-            self.set_cursor(0, self.line);
+            self.set_cursor(self.col, self.line);
         } else if c == '\r' {
             self.col = 0;
             self.set_cursor(0, self.line);
@@ -186,7 +190,7 @@ impl TextBuffer {
 
         for i in (0..total_size).map(|i| i as isize) {
             unsafe {
-                *VIDEO_MEMORY.offset(i) = self.value_from_char(' ');
+                VIDEO_MEMORY.offset(i).write_volatile(self.value_from_char(' '));
             }
         }
 
