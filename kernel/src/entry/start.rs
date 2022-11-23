@@ -11,6 +11,9 @@ const MAX_SMAP_ENTRIES: usize = 50;
 
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
+    crate::interrupts::init_idt();
+    crate::gdt::init();
+
     let num_reported_memory_regions = *NUM_SMAP_ENTRIES_PTR;
     let boot_drive = *BOOT_DRIVE_NUMBER_PTR;
 
@@ -113,8 +116,6 @@ pub unsafe extern "C" fn _start() -> ! {
         memory_regions: memory_regions_slice,
         boot_drive,
     };
-
-    crate::interrupts::init_idt();
 
     crate::main(&boot_info);
 

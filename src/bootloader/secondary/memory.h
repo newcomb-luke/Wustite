@@ -41,8 +41,9 @@
 #define KERNEL_READ_LOCATION_START                0x00020000
 #define KERNEL_READ_LOCATION_SIZE                 0x00050000
 
-#define KERNEL_STACK_START                        0x00200000
-#define KERNEL_STACK_END                          0x00300000
+#define KERNEL_STACK_TOP                          0x00200000
+// #define KERNEL_STACK_BOTTOM                       0x00300000
+#define KERNEL_STACK_BOTTOM                       0x00300000
 
 // Target memory map:
 // 0x00000000 - 0x000003FF - 1 KiB long - Real Mode IVT

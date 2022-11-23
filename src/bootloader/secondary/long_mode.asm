@@ -1,6 +1,7 @@
 [bits 32]
 
-KERNEL_STACK_START equ 0x00200000
+extern __KERNEL_STACK_BOTTOM
+; KERNEL_STACK_BOTTOM equ 0x00300000
 
 global long_mode_jump
 long_mode_jump:
@@ -78,7 +79,7 @@ in_longmode:
     mov ss, ax
 
     ; Set up the stack, quickly!
-    mov rsp, KERNEL_STACK_START
+    mov rsp, [__KERNEL_STACK_BOTTOM]
     mov rbp, rsp
 
     ; Load the entry point into rdx
