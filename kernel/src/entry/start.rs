@@ -11,8 +11,7 @@ const MAX_SMAP_ENTRIES: usize = 50;
 
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
-    crate::interrupts::init_idt();
-    crate::gdt::init();
+    crate::init();
 
     let num_reported_memory_regions = *NUM_SMAP_ENTRIES_PTR;
     let boot_drive = *BOOT_DRIVE_NUMBER_PTR;
@@ -119,7 +118,7 @@ pub unsafe extern "C" fn _start() -> ! {
 
     crate::main(&boot_info);
 
-    loop {}
+    hlt_loop();
 }
 
 unsafe fn add_memory_region(
@@ -172,5 +171,11 @@ impl From<RawMemoryRegionKind> for MemoryRegionKind {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     keprintln!("{}", info);
-    loop {}
+    hlt_loop();
+}
+
+pub fn hlt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
 }

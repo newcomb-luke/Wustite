@@ -1,5 +1,4 @@
 use core::fmt::{Result, Write};
-use core::{arch::asm, cell::RefCell};
 
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -8,9 +7,6 @@ use x86_64::instructions::port::Port;
 const VIDEO_MEMORY: *mut u16 = 0xB8000 as *mut u16;
 const NUM_COLUMNS: usize = 80;
 const NUM_ROWS: usize = 25;
-
-const VGA_ADDR_PORT: Port<u8> = Port::new(0x03D4);
-const VGA_DATA_PORT: Port<u8> = Port::new(0x03D5);
 
 const CURSOR_LOC_LOW: VGARegister = VGARegister::new(0x0f);
 const CURSOR_LOC_HIGH: VGARegister = VGARegister::new(0x0e);
@@ -47,20 +43,20 @@ macro_rules! keprintln {
 
 #[doc(hidden)]
 pub fn _kprint(args: core::fmt::Arguments) {
-    use core::fmt::Write;
-    TEXT_BUFFER.lock().write_fmt(args).unwrap();
+    x86_64::instructions::interrupts::without_interrupts(|| {     // new
+        TEXT_BUFFER.lock().write_fmt(args).unwrap();
+    });
 }
 
 #[doc(hidden)]
 pub fn _keprint(args: core::fmt::Arguments) {
-    use core::fmt::Write;
-    {
+    x86_64::instructions::interrupts::without_interrupts(|| {     // new
         let mut buffer = TEXT_BUFFER.lock();
 
         buffer.set_fg(ERROR_FG);
         buffer.write_fmt(args).unwrap();
         buffer.set_fg(REGULAR_FG);
-    }
+    });
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -93,6 +89,8 @@ impl VGARegister {
     }
 
     pub unsafe fn write(&self, value: u8) {
+        let mut VGA_ADDR_PORT: Port<u8> = Port::new(0x03D4);
+        let mut VGA_DATA_PORT: Port<u8> = Port::new(0x03D5);
         VGA_ADDR_PORT.write(self.0);
         VGA_DATA_PORT.write(value);
     }
@@ -125,19 +123,7 @@ impl TextBuffer {
             self.col = 0;
 
             if self.line >= NUM_ROWS {
-                for row in 1..NUM_ROWS {
-                    for col in 0..NUM_COLUMNS {
-                        let offset = (col + NUM_COLUMNS * row) as isize;
-                        let previous = (col + NUM_COLUMNS * (row - 1)) as isize;
-
-                        unsafe {
-                            VIDEO_MEMORY.offset(previous).write_volatile((VIDEO_MEMORY).offset(offset).read_volatile());
-                        }
-                    }
-                }
-
-                self.line = NUM_ROWS - 1;
-                self.clear_line(self.line);
+                self.shift_screen_up();
             }
 
             self.set_cursor(self.col, self.line);
@@ -156,6 +142,24 @@ impl TextBuffer {
 
             self.set_cursor(self.col, self.line);
         }
+    }
+
+    fn shift_screen_up(&mut self) {
+        for row in 1..NUM_ROWS {
+            for col in 0..NUM_COLUMNS {
+                let offset = (col + NUM_COLUMNS * row) as isize;
+                let previous = (col + NUM_COLUMNS * (row - 1)) as isize;
+
+                unsafe {
+                    VIDEO_MEMORY
+                        .offset(previous)
+                        .write_volatile((VIDEO_MEMORY).offset(offset).read_volatile());
+                }
+            }
+        }
+
+        self.line = NUM_ROWS - 1;
+        self.clear_line(self.line);
     }
 
     fn clear_line(&self, line: usize) {
@@ -182,6 +186,10 @@ impl TextBuffer {
         if self.col > NUM_COLUMNS {
             self.line += 1;
             self.col = 0;
+            
+            if self.line >= NUM_ROWS {
+                self.shift_screen_up();
+            }
         }
     }
 
@@ -190,7 +198,9 @@ impl TextBuffer {
 
         for i in (0..total_size).map(|i| i as isize) {
             unsafe {
-                VIDEO_MEMORY.offset(i).write_volatile(self.value_from_char(' '));
+                VIDEO_MEMORY
+                    .offset(i)
+                    .write_volatile(self.value_from_char(' '));
             }
         }
 

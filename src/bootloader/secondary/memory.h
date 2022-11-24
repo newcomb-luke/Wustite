@@ -42,7 +42,6 @@
 #define KERNEL_READ_LOCATION_SIZE                 0x00050000
 
 #define KERNEL_STACK_TOP                          0x00200000
-// #define KERNEL_STACK_BOTTOM                       0x00300000
 #define KERNEL_STACK_BOTTOM                       0x00300000
 
 // Target memory map:

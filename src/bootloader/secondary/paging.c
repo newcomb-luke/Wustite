@@ -2,7 +2,7 @@
 #include "memory.h"
 #include "bio.h"
 
-uint64_t __KERNEL_STACK_BOTTOM = 0x00300000;
+uint64_t __KERNEL_STACK_BOTTOM = KERNEL_STACK_BOTTOM;
 
 void identityMap(uint32_t numMegabytes) {
     uint64_t* pageTablesBegin = (uint64_t*) PAGE_TABLES_MEM_START;
