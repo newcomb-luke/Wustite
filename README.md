@@ -40,7 +40,11 @@ A custom toy operating system written mostly in the Rust programming language. T
     - [x] VGA text buffer support
     - [x] Print macros
   - [x] Panic handling
-  - [ ] Interrupt handling
+  - [x] Interrupt handling
+  - [x] Kernel Paging Setup
+  - [ ] Memory Map Coalescence
+  - [ ] Kernel Frame Allocation
+  - [ ] Kernel Page Table Allocation
   - [ ] Disk drivers
   - [ ] FAT12 read only drivers
       - [ ] Root directory lookup

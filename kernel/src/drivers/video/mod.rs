@@ -43,14 +43,16 @@ macro_rules! keprintln {
 
 #[doc(hidden)]
 pub fn _kprint(args: core::fmt::Arguments) {
-    x86_64::instructions::interrupts::without_interrupts(|| {     // new
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        // new
         TEXT_BUFFER.lock().write_fmt(args).unwrap();
     });
 }
 
 #[doc(hidden)]
 pub fn _keprint(args: core::fmt::Arguments) {
-    x86_64::instructions::interrupts::without_interrupts(|| {     // new
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        // new
         let mut buffer = TEXT_BUFFER.lock();
 
         buffer.set_fg(ERROR_FG);
@@ -105,7 +107,7 @@ pub struct TextBuffer {
 
 impl TextBuffer {
     pub fn new(fg: Color, bg: Color) -> Self {
-        let n = Self {
+        let mut n = Self {
             line: 0,
             col: 0,
             fg,
@@ -186,14 +188,14 @@ impl TextBuffer {
         if self.col > NUM_COLUMNS {
             self.line += 1;
             self.col = 0;
-            
+
             if self.line >= NUM_ROWS {
                 self.shift_screen_up();
             }
         }
     }
 
-    pub fn clear_screen(&self) {
+    pub fn clear_screen(&mut self) {
         let total_size = NUM_COLUMNS * NUM_ROWS;
 
         for i in (0..total_size).map(|i| i as isize) {
@@ -223,7 +225,7 @@ impl TextBuffer {
         value
     }
 
-    fn set_cursor(&self, col: usize, row: usize) {
+    fn set_cursor(&mut self, col: usize, row: usize) {
         let offset = (row * NUM_COLUMNS + col) as u16;
         let low = (offset & 0xFF) as u8;
         let high = (offset >> 8) as u8;
@@ -232,6 +234,9 @@ impl TextBuffer {
             CURSOR_LOC_LOW.write(low);
             CURSOR_LOC_HIGH.write(high);
         }
+
+        self.line = row;
+        self.col = col;
     }
 
     pub fn set_fg(&mut self, fg: Color) {

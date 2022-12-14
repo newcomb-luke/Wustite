@@ -1,6 +1,6 @@
 use crate::{
     entry::memory::{MemoryRegion, MemoryRegionKind},
-    keprintln,
+    hlt_loop, keprintln,
 };
 use core::panic::PanicInfo;
 
@@ -114,6 +114,7 @@ pub unsafe extern "C" fn _start() -> ! {
     let boot_info = BootInfo {
         memory_regions: memory_regions_slice,
         boot_drive,
+        physical_memory_offset: 0,
     };
 
     crate::main(&boot_info);
@@ -134,6 +135,7 @@ unsafe fn add_memory_region(
 pub struct BootInfo<'a> {
     pub memory_regions: &'a [MemoryRegion],
     pub boot_drive: u32,
+    pub physical_memory_offset: u64,
 }
 
 #[repr(packed)]
@@ -172,10 +174,4 @@ impl From<RawMemoryRegionKind> for MemoryRegionKind {
 fn panic(info: &PanicInfo) -> ! {
     keprintln!("{}", info);
     hlt_loop();
-}
-
-pub fn hlt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
-    }
 }

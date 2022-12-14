@@ -1,2 +1,2 @@
-pub mod video;
 pub mod keyboard;
+pub mod video;

@@ -85,5 +85,9 @@
 // 0x000F0000 - 0x000FFFFF - 64 KiB - Motherboard BIOS
 // 0x00100000 - 0x00200000 - Kernel Location
 // 0x00200000 - 0x00300000 - Kernel Stack Region
-// 0x00300000 - 0x00EFFFFF - 12 MiB - RAM free for use
+// 0x00300000 - 0x00301000 - Kernel PML4T
+// 0x00301000 - 0x00302000 - Kernel Page Directory Pointer Table
+// 0x00302000 - 0x00303000 - Kernel Page Directory Table
+// 0x00303000 - 0x0030b000 - Kernel Page Tables
+// 0x0030b000 - 0x00EFFFFF - 12 MiB - RAM free for use
 // 0x00F00000 - 0x00FFFFFF - 1 MiB - Possibly memory-mapped hardware
