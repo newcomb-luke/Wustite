@@ -1,10 +1,15 @@
+use core::slice;
+
 use x86_64::{
+    registers::control::Cr3,
     structures::paging::{
         page_table::PageTableEntry, FrameAllocator, Mapper, OffsetPageTable, Page, PageTable,
         PageTableFlags, PhysFrame, Size4KiB,
     },
-    PhysAddr, VirtAddr, registers::control::Cr3,
+    PhysAddr, VirtAddr,
 };
+
+use crate::entry::memory::MemoryRegion;
 
 // 0x00000500 - 0x00002d00 - Secondary bootloader load location (assuming size of 10 KiB)
 // 0x00002d00 - 0x00007BFF - Used for bootloader (stage 1 + stage 2) stack
@@ -28,7 +33,8 @@ use x86_64::{
 // 0x00301000 - 0x00302000 - Kernel Page Directory Pointer Table
 // 0x00302000 - 0x00303000 - Kernel Page Directory Table
 // 0x00303000 - 0x0030b000 - Kernel Page Tables
-// 0x0030b000 - 0x00EFFFFF - 12 MiB - RAM free for use
+// 0x0030b000 - 0x0030c000 - Unified memory map location
+// 0x0030c000 - 0x00EFFFFF - 12 MiB - RAM free for use
 // 0x00F00000 - 0x00FFFFFF - 1 MiB - Possibly memory-mapped hardware
 
 const PAGE_TABLE_NUM_ENTRIES: usize = 512;
@@ -42,6 +48,30 @@ unsafe impl FrameAllocator<Size4KiB> for EmptyFrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
         None
     }
+}
+
+pub struct UnifiedMemoryMap {
+    pub regions: &'static [UnifiedMemoryRegion],
+}
+
+impl UnifiedMemoryMap {
+    pub unsafe fn new(memory_map: &mut [MemoryRegion]) -> Self {
+        const BEGIN: *mut UnifiedMemoryRegion = 0x0030b000 as *mut UnifiedMemoryRegion;
+        const MAX_NUM: usize = 512;
+
+        let mut num_regions = 0;
+
+        let mut current_memory_region = BEGIN;
+
+        Self {
+            regions: unsafe { slice::from_raw_parts(BEGIN, num_regions) },
+        }
+    }
+}
+
+pub struct UnifiedMemoryRegion {
+    pub start: usize,
+    pub end: usize,
 }
 
 /// Initialize a new OffsetPageTable.
@@ -122,15 +152,12 @@ unsafe fn init_kernel_page_tables() {
         );
 
         for entry_idx in 0..PAGE_TABLE_NUM_ENTRIES {
-
             // Skip the very very first page of memory, that way dereferencing
             // a null pointer results in a page fault
             if i == 0 && entry_idx == 0 {
                 current_page_table_ptr[entry_idx] = PageTableEntry::new();
-                current_page_table_ptr[entry_idx].set_addr(
-                    PhysAddr::new(current_phys_addr),
-                    PageTableFlags::empty(),
-                );
+                current_page_table_ptr[entry_idx]
+                    .set_addr(PhysAddr::new(current_phys_addr), PageTableFlags::empty());
 
                 current_phys_addr += 0x1000;
 
@@ -151,7 +178,10 @@ unsafe fn init_kernel_page_tables() {
 
     let (_, flags) = Cr3::read();
 
-    Cr3::write(PhysFrame::from_start_address(PhysAddr::new(KERNEL_PML4T as u64)).unwrap(), flags);
+    Cr3::write(
+        PhysFrame::from_start_address(PhysAddr::new(KERNEL_PML4T as u64)).unwrap(),
+        flags,
+    );
 }
 
 unsafe fn zero_page_table_memory(page_table: *mut u8) {

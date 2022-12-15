@@ -8,10 +8,6 @@ pub struct MemoryRegion {
 pub enum MemoryRegionKind {
     // Usable memory for anything your kernel developer heart desires
     Usable,
-    // Memory used by the bootloader for the initial page table
-    BootloaderPageTables,
-    // Memory used by the bootloader for the initial global descriptor table
-    BootloaderGDT,
     // Reserved as stated by the system firmware
     Reserved,
     // Bad memory as stated by the system firmware

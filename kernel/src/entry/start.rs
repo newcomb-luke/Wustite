@@ -21,74 +21,56 @@ pub unsafe extern "C" fn _start() -> ! {
     let mut next_memory_region = memory_regions_start;
     let mut next_raw_memory_region = START_SMAP_ENTRIES_PTR;
 
-    // This is actually funnily enough just where we are storing this table...
-    // so reserve it!
+    // This is where the kernel itself is loaded into memory
     add_memory_region(
         &mut num_memory_regions,
         &mut next_memory_region,
         MemoryRegion {
-            start: 0x0000,
-            end: 0x500,
+            start: 0x100000,
+            end: 0x200000,
             kind: MemoryRegionKind::Reserved,
         },
     );
-    // The place where the bootloader has placed the GDT
-    // In reality this is just the entire second stage bootloader
+
+    // This is where the kernel will store all of its initial
+    // page tables.
     add_memory_region(
         &mut num_memory_regions,
         &mut next_memory_region,
         MemoryRegion {
-            start: 0x500,
-            end: 0x2d00,
-            kind: MemoryRegionKind::BootloaderGDT,
-        },
-    );
-    // The region where our boot sector was, and where the stacks were for
-    // the primary and secondary bootloader stages
-    add_memory_region(
-        &mut num_memory_regions,
-        &mut next_memory_region,
-        MemoryRegion {
-            start: 0x2d00,
-            end: 0x10000,
-            kind: MemoryRegionKind::Usable,
-        },
-    );
-    // The place where the bootloader stored the current page tables
-    add_memory_region(
-        &mut num_memory_regions,
-        &mut next_memory_region,
-        MemoryRegion {
-            start: 0x10000,
-            end: 0x20000,
-            kind: MemoryRegionKind::BootloaderPageTables,
-        },
-    );
-    // The place the kernel is loaded, lol
-    add_memory_region(
-        &mut num_memory_regions,
-        &mut next_memory_region,
-        MemoryRegion {
-            start: 0x20000,
-            end: 0x70000,
+            start: 0x200000,
+            end: 0x0030c000,
             kind: MemoryRegionKind::Reserved,
         },
     );
+
+    // Video memory and the like, I'm not sure why this isn't
+    // reported by hardware exactly
+    add_memory_region(
+        &mut num_memory_regions,
+        &mut next_memory_region,
+        MemoryRegion {
+            start: 0xa0000,
+            end: 0xf0000,
+            kind: MemoryRegionKind::Reserved,
+        },
+    );
+
     // This is a little tricky, but this is the place where
     // the secondary bootloader stored all of this information
     // which we are going to store in kernel space. The entire idea
     // of doing this translation is that we are moving it from raw memory in this area
     // into variables that the kernel is using. So it should be free memory
     // by the time we are done, which is when this map will be read
-    add_memory_region(
-        &mut num_memory_regions,
-        &mut next_memory_region,
-        MemoryRegion {
-            start: 0x70000,
-            end: 0x7FFFF,
-            kind: MemoryRegionKind::Usable,
-        },
-    );
+    // add_memory_region(
+    //     &mut num_memory_regions,
+    //     &mut next_memory_region,
+    //     MemoryRegion {
+    //         start: 0x70000,
+    //         end: 0x7FFFF,
+    //         kind: MemoryRegionKind::Usable,
+    //     },
+    // );
     // From here on, this should be reported by the hardware. It knows where the
     // EBDA begins and ends, and it knows where all of video memory and everything
     // above 1 MiB is.

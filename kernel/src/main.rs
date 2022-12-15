@@ -9,7 +9,10 @@ mod gdt;
 mod interrupts;
 mod memory;
 mod std;
-use x86_64::{structures::paging::{Translate, PageTable, Page}, VirtAddr};
+use x86_64::{
+    structures::paging::{Page, PageTable, Translate},
+    VirtAddr,
+};
 
 use crate::entry::BootInfo;
 
@@ -42,7 +45,7 @@ fn main(boot_info: &BootInfo) {
 
     // write the string `New!` to the screen through the new mapping
     let page_ptr: *mut u64 = page.start_address().as_mut_ptr();
-    unsafe { page_ptr.offset(400).write_volatile(0x_f021_f077_f065_f04e)};
+    unsafe { page_ptr.offset(400).write_volatile(0x_f021_f077_f065_f04e) };
 
     loop {}
 
@@ -82,7 +85,7 @@ fn main(boot_info: &BootInfo) {
         let virt = VirtAddr::new(address);
         let phys = mapper.translate_addr(virt);
         kprintln!("{:?} -> {:?}", virt, phys);
-    } 
+    }
 }
 
 pub fn hlt_loop() -> ! {
