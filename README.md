@@ -3,38 +3,36 @@ A custom toy operating system written mostly in the Rust programming language. T
 
 # Build Dependencies
 
-* nasm
 * qemu
 * mtools
-* gcc
 * cargo
 
 # Roadmap
 
-- [x] Bootloader
-  - [x] Stage 1
-    - [x] FAT12 header in boot sector
-    - [x] Disk read
-    - [x] Screen BIOS print routines
-    - [x] Minimal FAT12 read support
-    - [x] Second stage binary file loading
-  - [x] Stage 2
-    - [x] Disk read
-    - [x] BIOS print routines
-    - [x] Minimal FAT12 read support
-      - [x] Root directory lookup
-      - [x] FAT lookup
-      - [x] Read arbitrary file into memory
-    - [x] Minimal ELF executable loading
-    - [x] Protected mode entry
-    - [x] Long mode entry
-      - [x] Enabling PAE
-      - [x] Set 64-bit page table
-      - [x] Set long mode enable bit
-      - [x] Enable paging
-      - [x] Set up 64-bit GDT
-    - [x] BIOS memory map request
-    - [x] Providing boot info to kernel
+- [ ] Bootloader
+  - [ ] Stage 1
+    - [ ] FAT12 header in boot sector
+    - [ ] Disk read
+    - [ ] Screen BIOS print routines
+    - [ ] Minimal FAT12 read support
+    - [ ] Second stage binary file loading
+  - [ ] Stage 2
+    - [ ] Disk read
+    - [ ] BIOS print routines
+    - [ ] Minimal FAT12 read support
+      - [ ] Root directory lookup
+      - [ ] FAT lookup
+      - [ ] Read arbitrary file into memory
+    - [ ] Minimal ELF executable loading
+    - [ ] Protected mode entry
+    - [ ] Long mode entry
+      - [ ] Enabling PAE
+      - [ ] Set 64-bit page table
+      - [ ] Set long mode enable bit
+      - [ ] Enable paging
+      - [ ] Set up 64-bit GDT
+    - [ ] BIOS memory map request
+    - [ ] Providing boot info to kernel
 - [ ] Kernel
   - [x] Bare bones printing
     - [x] VGA text buffer support
