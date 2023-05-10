@@ -1,4 +1,1 @@
-
-[build]
-target = "target.json"
-rustflags = ["-C", "link-arg=-Tlink.x", "-C", "link-arg=-Map=kernel.map"]
+rustflags = ["-C", "link-arg=-Tlinker.ld"]

@@ -343,8 +343,8 @@ halt:
 
 STARTUP_MSG: 			db "Boot!", 0x0a, 0x0d, 0
 DISK_READ_ERROR_MSG: 		db "Disk read error", 0x0a, 0x0d, 0
-SECONDARY_FILE_NAME: 		db "SECBOOT BIN"
-SECONDARY_NOT_FOUND_MSG: 	db "SECBOOT.BIN not found", 0x0a, 0x0d, 0
+SECONDARY_FILE_NAME: 		db "BOOT    BIN"
+SECONDARY_NOT_FOUND_MSG: 	db "BOOT.BIN not found", 0x0a, 0x0d, 0
 
 SECONDARY_CLUSTER_PTR:	dw 0
 

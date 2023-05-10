@@ -2,6 +2,13 @@
 members = ["bootloader", "kernel"]
 
 [workspace.package]
-name = "Wustite"
 version = "0.1.0"
 edition = "2021"
+
+[profile.dev]
+panic = "abort"
+strip = true
+
+[profile.release]
+panic = "abort"
+strip = true
