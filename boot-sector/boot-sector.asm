@@ -53,6 +53,10 @@ _start:
 	; store it
 	mov [ebr_drive_number], dl
 
+	; Provide the boot drive number in memory at address 0x10
+    mov dl, [ebr_drive_number]
+	mov [0x10], dl
+
     cld
 
 	; Read the other drive parameters from the BIOS
@@ -208,8 +212,6 @@ _start:
 	jmp .load_secondary_loop
 
 .read_finish:
-	; Provide the boot drive number in dl the register
-	mov dl, [ebr_drive_number]
 	; Set the segment registers
 	mov ax, SECONDARY_LOAD_SEGMENT
 	mov ds, ax
@@ -341,15 +343,15 @@ halt:
 	hlt
 	jmp halt
 
-STARTUP_MSG: 			db "Boot!", 0x0a, 0x0d, 0
+STARTUP_MSG: 			    db "Boot!", 0x0a, 0x0d, 0
 DISK_READ_ERROR_MSG: 		db "Disk read error", 0x0a, 0x0d, 0
 SECONDARY_FILE_NAME: 		db "BOOT    BIN"
 SECONDARY_NOT_FOUND_MSG: 	db "BOOT.BIN not found", 0x0a, 0x0d, 0
 
-SECONDARY_CLUSTER_PTR:	dw 0
+SECONDARY_CLUSTER_PTR:	    dw 0
 
-SECONDARY_LOAD_SEGMENT 	equ 0x0000
-SECONDARY_LOAD_OFFSET 	equ 0x0500
+SECONDARY_LOAD_SEGMENT 	    equ 0x0000
+SECONDARY_LOAD_OFFSET 	    equ 0x0500
 
 ; Padding
 times 510 - ($ - $$) db 0

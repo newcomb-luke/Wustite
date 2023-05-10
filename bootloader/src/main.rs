@@ -1,54 +1,53 @@
 #![no_std]
 #![no_main]
+#![allow(unconditional_panic)]
 
 use core::arch::asm;
 use core::panic::PanicInfo;
 
 mod a20;
+mod disk;
 mod gdt;
+mod printing;
 
 use a20::enable_a20;
 use gdt::GlobalDescriptorTable;
 
+use crate::disk::Disk;
+
 static GDT: GlobalDescriptorTable = GlobalDescriptorTable::unreal();
+
+static mut DRIVE_NUM_PTR: *const u8 = 0x10 as *const u8;
 
 #[no_mangle]
 #[link_section = ".entry"]
 pub extern "C" fn entry() -> ! {
     enter_unreal_mode();
 
-    print_str("Reached bootloader!\r\n");
+    let drive_number: u8 = unsafe { *DRIVE_NUM_PTR };
 
-    if let Err(_) = enable_a20() {
-        print_str("A20 line failed to enable.\r\n");
+    println!("Reached bootloader!");
 
-        loop {}
+    println!("Drive number: 0x{:02x}", drive_number);
+
+    if let Ok(boot_disk) = Disk::from_drive(drive_number) {
+        println!("Disk type: {}", boot_disk.drive_type());
+
+        println!("Disk max head: 0x{:02x}", boot_disk.max_head());
+
+        println!("Disk max cylinder: 0x{:04x}", boot_disk.max_cylinder());
+
+        println!("Disk max sector: 0x{:02x}", boot_disk.max_sector());
+
+        if let Err(_) = enable_a20() {
+            println!("A20 line failed to enable.");
+
+            loop {}
+        }
+    } else {
+        println!("Failed to read disk parameters.");
     }
 
-    print_str("Woohoo!\r\n");
-
-    loop {}
-}
-
-fn print_str(s: &str) {
-    for c in s.chars() {
-        print_char(c);
-    }
-}
-
-fn print_char(c: char) {
-    unsafe {
-        asm!(
-            "int 0x10",
-            in("al") c as u8,
-            in("ah") 0x0eu8,
-            in("bx") 0u16
-        );
-    }
-}
-
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
     loop {}
 }
 
@@ -80,4 +79,11 @@ fn enter_unreal_mode() {
         asm!("mov ds, {:x}", in(reg) ds);
         asm!("mov ss, {:x}", in(reg) ss);
     }
+}
+
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    println!("{}", info);
+
+    loop {}
 }

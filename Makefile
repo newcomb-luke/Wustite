@@ -46,7 +46,7 @@ kernel: $(BUILD_DIR)/kernel.o $(KERNEL_BASE_DIR)/link.x $(KERNEL_BASE_DIR)/targe
 $(BUILD_DIR)/kernel.o: always FORCE
 	cd kernel; \
 	cargo xbuild --target target.json
-	cp kernel/target/target/debug/kernel $(BUILD_DIR)/kernel.o
+	cp kernel/target/target/release/kernel $(BUILD_DIR)/kernel.o
 	# cargo xbuild --release --target target.json
 	# cp kernel/target/target/release/kernel $(BUILD_DIR)/kernel.o
 
