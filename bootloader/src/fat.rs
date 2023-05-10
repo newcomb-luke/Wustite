@@ -2,12 +2,19 @@ use core::mem::size_of;
 
 use crate::{
     disk::{Disk, DiskReadError, SECTOR_SIZE},
-    println,
+    print, println,
 };
 
 const FAT_DRIVER_BOOT_SECTOR_PTR: *mut u8 = 0x7c00 as *mut u8;
+
 const FAT_DRIVER_ROOT_DIR_BUFFER_PTR: *mut u8 = 0x8000 as *mut u8;
 const FAT_DRIVER_ROOT_DIR_BUFFER_SECTORS: u16 = 2;
+
+const FAT_DRIVER_FAT_BUFFER_PTR: *mut u8 = 0x8400 as *mut u8;
+const FAT_DRIVER_FAT_BUFFER_SECTORS: u16 = 2;
+
+const FAT_DRIVER_FILE_BUFFER_PTR: *mut u8 = 0x8800 as *mut u8;
+const FAT_DRIVER_FILE_BUFFER_SECTORS: u16 = 2;
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -176,7 +183,7 @@ impl DirEntry {
 
 #[repr(C, packed)]
 struct BootRecord {
-    bdb_boot_jump: [u8; 3], // This calculation rounds up to the nearest whole sector, which is how the data is stored if it doesn't fit neatly
+    bdb_boot_jump: [u8; 3],
     bdb_oem_id: [u8; 8],
     bdb_bytes_per_sector: u16,
     bdb_sectors_per_cluster: u8,
@@ -201,10 +208,78 @@ struct BootRecord {
     // code and magic number
 }
 
-pub struct FATFile {
+impl BootRecord {
+    fn sectors_per_fat(&self) -> u16 {
+        let sectors_per_fat_ptr = core::ptr::addr_of!(self.bdb_sectors_per_fat);
+
+        unsafe { sectors_per_fat_ptr.read_unaligned() }
+    }
+}
+
+pub struct FATFile<'a> {
     start_cluster: u16,
     current_cluster: u16,
-    size: u32,
+    size_bytes: u32,
+    driver: &'a mut FATDriver,
+}
+
+impl<'a> FATFile<'a> {
+    pub fn read(&mut self, buffer: &mut [u8]) -> Result<usize, FATDriverError> {
+        let fat_entries_per_buffer =
+            12.0 / (FAT_DRIVER_FAT_BUFFER_SECTORS * SECTOR_SIZE as u16) as f32;
+
+        let mut bytes_read = 0;
+        let mut bytes_remaining = self.size_bytes - bytes_read;
+        let mut fat_offset = 0;
+
+        let mut local_index = 0;
+        let mut read_offset = false;
+
+        // Load the beginning of the FAT
+        self.load_fat(0)?;
+
+        for _ in 0..8 {
+            let data_ptr =
+                unsafe { FAT_DRIVER_FAT_BUFFER_PTR.offset(local_index as isize) } as *const u16;
+            let data = unsafe { data_ptr.read_unaligned() };
+
+            let cluster = if read_offset {
+                ((data & 0xFF00) >> 4) | ((data & 0xF0) >> 4)
+            } else {
+                data & 0x0FFF
+            };
+
+            print!("{:03x} ", cluster);
+
+            if read_offset {
+                local_index += 1;
+            }
+
+            local_index += 1;
+            read_offset = !read_offset;
+        }
+
+        return Ok(0);
+
+        while bytes_remaining > 0 {
+            if local_index >= fat_entries_per_buffer as u16 {
+                self.load_fat(fat_offset)?;
+            }
+        }
+
+        Ok(bytes_read as usize)
+    }
+
+    fn load_fat(&mut self, offset: u16) -> Result<(), FATDriverError> {
+        self.driver
+            .disk
+            .read_sectors(
+                (self.driver.fat_start_sector + offset).into(),
+                FAT_DRIVER_FAT_BUFFER_SECTORS.into(),
+                FAT_DRIVER_FAT_BUFFER_PTR,
+            )
+            .map_err(|_| FATDriverError::DiskReadError)
+    }
 }
 
 pub struct FATDriver {
@@ -260,7 +335,8 @@ impl FATDriver {
         Ok(FATFile {
             start_cluster: entry.first_cluster_low,
             current_cluster: entry.first_cluster_low,
-            size: entry.file_size,
+            size_bytes: entry.file_size,
+            driver: self,
         })
     }
 

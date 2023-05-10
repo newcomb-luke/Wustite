@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![allow(unconditional_panic)]
 
 use core::arch::asm;
 use core::panic::PanicInfo;
@@ -20,6 +19,9 @@ use crate::fat::{FATDriver, FileName};
 static GDT: GlobalDescriptorTable = GlobalDescriptorTable::unreal();
 
 const DRIVE_NUM_PTR: *const u8 = 0x10 as *const u8;
+
+const KERNEL_READ_LOCATION: *mut u8 = 0x00020000 as *mut u8;
+const KERNEL_READ_LOCATION_SIZE: usize = 0x00050000;
 
 #[no_mangle]
 #[link_section = ".entry"]
@@ -59,7 +61,7 @@ pub extern "C" fn entry() -> ! {
         }
     };
 
-    let test = match fat_driver.open_file(&file_name) {
+    let mut test = match fat_driver.open_file(&file_name) {
         Ok(file) => file,
         Err(e) => {
             println!("Failed to open file: {:?}", e);
@@ -67,6 +69,15 @@ pub extern "C" fn entry() -> ! {
             loop {}
         }
     };
+
+    let kernel_read_location =
+        unsafe { core::slice::from_raw_parts_mut(KERNEL_READ_LOCATION, KERNEL_READ_LOCATION_SIZE) };
+
+    if let Err(e) = test.read(kernel_read_location) {
+        println!("Failed to read file");
+
+        loop {}
+    }
 
     if let Err(_) = enable_a20() {
         println!("A20 line failed to enable.");
