@@ -7,6 +7,7 @@ use core::panic::PanicInfo;
 
 mod a20;
 mod disk;
+mod fat;
 mod gdt;
 mod printing;
 
@@ -14,10 +15,11 @@ use a20::enable_a20;
 use gdt::GlobalDescriptorTable;
 
 use crate::disk::Disk;
+use crate::fat::{FATDriver, FileName};
 
 static GDT: GlobalDescriptorTable = GlobalDescriptorTable::unreal();
 
-static mut DRIVE_NUM_PTR: *const u8 = 0x10 as *const u8;
+const DRIVE_NUM_PTR: *const u8 = 0x10 as *const u8;
 
 #[no_mangle]
 #[link_section = ".entry"]
@@ -28,24 +30,48 @@ pub extern "C" fn entry() -> ! {
 
     println!("Reached bootloader!");
 
-    println!("Drive number: 0x{:02x}", drive_number);
+    let boot_disk = if let Ok(boot_disk) = Disk::from_drive(drive_number) {
+        boot_disk
+    } else {
+        println!("Failed to read disk parameters.");
+        loop {}
+    };
 
-    if let Ok(boot_disk) = Disk::from_drive(drive_number) {
-        println!("Disk type: {}", boot_disk.drive_type());
+    let mut fat_driver = match FATDriver::new(boot_disk) {
+        Ok(fat_driver) => fat_driver,
+        Err(e) => {
+            println!("Failed to iniailzize FAT driver: {:?}", e);
+            loop {}
+        }
+    };
 
-        println!("Disk max head: 0x{:02x}", boot_disk.max_head());
+    let file_name_str = "test.txt";
 
-        println!("Disk max cylinder: 0x{:04x}", boot_disk.max_cylinder());
-
-        println!("Disk max sector: 0x{:02x}", boot_disk.max_sector());
-
-        if let Err(_) = enable_a20() {
-            println!("A20 line failed to enable.");
+    let file_name = match FileName::try_from(file_name_str) {
+        Ok(file_name) => file_name,
+        Err(e) => {
+            println!(
+                "Failed to convert file name {} into 8.3 format",
+                file_name_str
+            );
 
             loop {}
         }
-    } else {
-        println!("Failed to read disk parameters.");
+    };
+
+    let test = match fat_driver.open_file(&file_name) {
+        Ok(file) => file,
+        Err(e) => {
+            println!("Failed to open file: {:?}", e);
+
+            loop {}
+        }
+    };
+
+    if let Err(_) = enable_a20() {
+        println!("A20 line failed to enable.");
+
+        loop {}
     }
 
     loop {}

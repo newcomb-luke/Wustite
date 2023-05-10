@@ -21,8 +21,8 @@ $(BUILD_DIR)/boot_sector.bin: always
 bootloader: $(BUILD_DIR)/bootloader.bin
 
 $(BUILD_DIR)/bootloader.bin: always
-	cargo build -Z build-std=core --target=i686-none-eabi.json --package=bootloader
-	objcopy -I elf32-i386 -O binary target/i686-none-eabi/debug/bootloader $(BUILD_DIR)/bootloader.bin
+	cargo build --release -Z build-std=core --target=i686-none-eabi.json --package=bootloader
+	objcopy -I elf32-i386 -O binary target/i686-none-eabi/release/bootloader $(BUILD_DIR)/bootloader.bin
 
 #
 # Floppy image
@@ -36,7 +36,7 @@ $(BUILD_DIR)/boot_floppy.img: boot_sector bootloader
 	dd if=$(BUILD_DIR)/boot-sector.bin of=$(BUILD_DIR)/boot_floppy.img conv=notrunc
 	mcopy -i $(BUILD_DIR)/boot_floppy.img $(BUILD_DIR)/bootloader.bin "::boot.bin"
 	# mcopy -i $(BUILD_DIR)/boot_floppy.img $(BUILD_DIR)/kernel.o "::kernel.o"
-	# mcopy -i $(BUILD_DIR)/boot_floppy.img test.txt "::test.txt"
+	mcopy -i $(BUILD_DIR)/boot_floppy.img test.txt "::test.txt"
 
 # 
 # Kernel
