@@ -61,7 +61,7 @@ pub extern "C" fn entry() -> ! {
         }
     };
 
-    let mut test = match fat_driver.open_file(&file_name) {
+    let mut file = match fat_driver.open_file(&file_name) {
         Ok(file) => file,
         Err(e) => {
             println!("Failed to open file: {:?}", e);
@@ -73,10 +73,15 @@ pub extern "C" fn entry() -> ! {
     let kernel_read_location =
         unsafe { core::slice::from_raw_parts_mut(KERNEL_READ_LOCATION, KERNEL_READ_LOCATION_SIZE) };
 
-    if let Err(e) = test.read(kernel_read_location) {
-        println!("Failed to read file");
+    match file.read(kernel_read_location) {
+        Ok(bytes_read) => {
+            println!("Read {} bytes", bytes_read);
+        }
+        Err(e) => {
+            println!("Failed to read file");
 
-        loop {}
+            loop {}
+        }
     }
 
     if let Err(_) = enable_a20() {

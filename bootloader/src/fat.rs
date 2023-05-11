@@ -11,9 +11,9 @@ const FAT_DRIVER_ROOT_DIR_BUFFER_PTR: *mut u8 = 0x8000 as *mut u8;
 const FAT_DRIVER_ROOT_DIR_BUFFER_SECTORS: u16 = 2;
 
 const FAT_DRIVER_FAT_BUFFER_PTR: *mut u8 = 0x8400 as *mut u8;
-const FAT_DRIVER_FAT_BUFFER_SECTORS: u16 = 2;
+const FAT_DRIVER_FAT_BUFFER_SECTORS: u16 = 3;
 
-const FAT_DRIVER_FILE_BUFFER_PTR: *mut u8 = 0x8800 as *mut u8;
+const FAT_DRIVER_FILE_BUFFER_PTR: *mut u8 = 0x9000 as *mut u8;
 const FAT_DRIVER_FILE_BUFFER_SECTORS: u16 = 2;
 
 #[derive(Clone, Copy)]
@@ -33,6 +33,8 @@ enum EntryAttribute {
 pub enum FATDriverError {
     DiskReadError,
     FileNotFoundError,
+    UnsupportedSectorsPerClusterError,
+    InvalidFileSizeError,
 }
 
 #[derive(Clone, Copy)]
@@ -218,26 +220,92 @@ impl BootRecord {
 
 pub struct FATFile<'a> {
     start_cluster: u16,
-    current_cluster: u16,
     size_bytes: u32,
     driver: &'a mut FATDriver,
 }
 
+fn sector_of_fat(cluster: u16) -> u16 {
+    ((cluster + 1) * 12) / SECTOR_SIZE as u16
+}
+
+fn section_of_fat(sector: u16) -> u16 {
+    sector / FAT_DRIVER_FAT_BUFFER_SECTORS
+}
+
 impl<'a> FATFile<'a> {
     pub fn read(&mut self, buffer: &mut [u8]) -> Result<usize, FATDriverError> {
-        let fat_entries_per_buffer =
-            12.0 / (FAT_DRIVER_FAT_BUFFER_SECTORS * SECTOR_SIZE as u16) as f32;
-
         let mut bytes_read = 0;
-        let mut bytes_remaining = self.size_bytes - bytes_read;
-        let mut fat_offset = 0;
+        let mut bytes_remaining = self.size_bytes.min(buffer.len() as u32);
+
+        let mut current_cluster = self.start_cluster;
+        let mut previous_fat_sector = sector_of_fat(current_cluster);
+        let mut previous_fat_section = section_of_fat(previous_fat_sector);
+        let sectors_per_cluster = self.driver.boot_record.bdb_sectors_per_cluster as usize;
+        let clusters_per_buffer = (FAT_DRIVER_FAT_BUFFER_SECTORS * SECTOR_SIZE as u16) / 12;
+
+        println!("Start cluster: {:02x}", self.start_cluster);
+
+        if self.driver.boot_record.bdb_sectors_per_cluster > 2 {
+            return Err(FATDriverError::UnsupportedSectorsPerClusterError);
+        }
+
+        self.load_fat_section(previous_fat_section)?;
+
+        while bytes_read < bytes_remaining {
+            self.load_cluster(current_cluster)?;
+
+            // Copy the data into the buffer
+            let bytes_to_copy = (bytes_remaining as usize).min(SECTOR_SIZE * sectors_per_cluster);
+            for b in 0..bytes_to_copy {
+                let byte = unsafe { *FAT_DRIVER_FILE_BUFFER_PTR.offset(b as isize) };
+                buffer[bytes_read as usize + b] = byte;
+            }
+            bytes_read += bytes_to_copy as u32;
+
+            let new_fat_sector = sector_of_fat(current_cluster);
+            let new_fat_section = section_of_fat(new_fat_sector);
+
+            if new_fat_section != previous_fat_section {
+                println!("Loading new fat section!");
+
+                self.load_fat_section(new_fat_section);
+
+                previous_fat_sector = new_fat_sector;
+                previous_fat_section = new_fat_section;
+            }
+
+            let local_cluster = current_cluster - previous_fat_section * clusters_per_buffer;
+            let read_offset = local_cluster % 2 != 0;
+            let local_index = (local_cluster * 3) / 2;
+
+            println!("Local cluster: {:03x}", local_cluster);
+
+            let data_ptr =
+                unsafe { FAT_DRIVER_FAT_BUFFER_PTR.offset(local_index as isize) } as *const u16;
+            let data = unsafe { data_ptr.read_unaligned() };
+
+            let next_cluster = if read_offset {
+                ((data & 0xFF00) >> 4) | ((data & 0xF0) >> 4)
+            } else {
+                data & 0x0FFF
+            };
+
+            // Any of these are supposed to indicate an end of chain marker (there is no more file)
+            if next_cluster == 0
+                || next_cluster == 1
+                || next_cluster == 0xFF0
+                || next_cluster >= 0xFF8
+            {
+                if bytes_read != self.size_bytes {
+                    return Err(FATDriverError::InvalidFileSizeError);
+                }
+            }
+
+            current_cluster = next_cluster;
+        }
 
         let mut local_index = 0;
         let mut read_offset = false;
-
-        // Load the beginning of the FAT
-        self.load_fat(0)?;
-
         for _ in 0..8 {
             let data_ptr =
                 unsafe { FAT_DRIVER_FAT_BUFFER_PTR.offset(local_index as isize) } as *const u16;
@@ -259,22 +327,36 @@ impl<'a> FATFile<'a> {
             read_offset = !read_offset;
         }
 
-        return Ok(0);
-
-        while bytes_remaining > 0 {
-            if local_index >= fat_entries_per_buffer as u16 {
-                self.load_fat(fat_offset)?;
-            }
-        }
+        println!();
 
         Ok(bytes_read as usize)
     }
 
-    fn load_fat(&mut self, offset: u16) -> Result<(), FATDriverError> {
+    // Returns the LBA but also the number of sectors in a cluster
+    fn cluster_to_lba(&self, cluster: u16) -> (u32, u32) {
+        let sectors_per_cluster = self.driver.boot_record.bdb_sectors_per_cluster;
+
+        let lba = self.driver.data_region_start_sector as u32
+            + (cluster as u32 - 2) * sectors_per_cluster as u32;
+
+        (lba, sectors_per_cluster as u32)
+    }
+
+    fn load_cluster(&mut self, cluster: u16) -> Result<(), FATDriverError> {
+        let (lba, sectors_to_read) = self.cluster_to_lba(cluster);
+
+        self.driver
+            .disk
+            .read_sectors(lba, sectors_to_read, FAT_DRIVER_FILE_BUFFER_PTR)
+            .map_err(|_| FATDriverError::DiskReadError)
+    }
+
+    /// This assumes that in FAT12 all FATs are divisible by 3 sectors, which would make sense
+    fn load_fat_section(&mut self, section: u16) -> Result<(), FATDriverError> {
         self.driver
             .disk
             .read_sectors(
-                (self.driver.fat_start_sector + offset).into(),
+                (self.driver.fat_start_sector + section * 3).into(),
                 FAT_DRIVER_FAT_BUFFER_SECTORS.into(),
                 FAT_DRIVER_FAT_BUFFER_PTR,
             )
@@ -334,7 +416,6 @@ impl FATDriver {
 
         Ok(FATFile {
             start_cluster: entry.first_cluster_low,
-            current_cluster: entry.first_cluster_low,
             size_bytes: entry.file_size,
             driver: self,
         })
