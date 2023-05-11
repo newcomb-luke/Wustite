@@ -1,9 +1,6 @@
 use core::mem::size_of;
 
-use crate::{
-    disk::{Disk, DiskReadError, SECTOR_SIZE},
-    println,
-};
+use crate::disk::{Disk, DiskReadError, SECTOR_SIZE};
 
 const FAT_DRIVER_BOOT_SECTOR_PTR: *mut u8 = 0x7c00 as *mut u8;
 
@@ -181,6 +178,14 @@ impl DirEntry {
     fn is_volume_id(&self) -> bool {
         (self.attributes & EntryAttribute::VolumeId as u8) != 0
     }
+
+    fn first_cluster_low(&self) -> u16 {
+        unsafe { core::ptr::addr_of!(self.first_cluster_low).read_unaligned() }
+    }
+
+    fn file_size(&self) -> u32 {
+        unsafe { core::ptr::addr_of!(self.file_size).read_unaligned() }
+    }
 }
 
 #[repr(C, packed)]
@@ -225,7 +230,7 @@ pub struct FATFile<'a> {
 }
 
 fn sector_of_fat(cluster: u16) -> u16 {
-    ((cluster + 1) * 12) / SECTOR_SIZE as u16
+    (cluster * 12) / (SECTOR_SIZE as u16 * 8)
 }
 
 fn section_of_fat(sector: u16) -> u16 {
@@ -246,8 +251,6 @@ impl<'a> FATFile<'a> {
         if self.driver.boot_record.bdb_sectors_per_cluster > 2 {
             return Err(FATDriverError::UnsupportedSectorsPerClusterError);
         }
-
-        println!("Bytes remaining: {}", bytes_remaining);
 
         self.load_fat_section(previous_fat_section)?;
 
@@ -298,6 +301,15 @@ impl<'a> FATFile<'a> {
                 }
             }
 
+            for i in 0..300000 {
+                unsafe {
+                    let v1 = (0x10 as *const u8).read_volatile();
+                    let v2 = 0x11 as *mut u8;
+
+                    *v2 = v1;
+                }
+            }
+
             current_cluster = next_cluster;
         }
 
@@ -328,7 +340,7 @@ impl<'a> FATFile<'a> {
         self.driver
             .disk
             .read_sectors(
-                (self.driver.fat_start_sector + section * 3).into(),
+                (self.driver.fat_start_sector + section * FAT_DRIVER_FAT_BUFFER_SECTORS).into(),
                 FAT_DRIVER_FAT_BUFFER_SECTORS.into(),
                 FAT_DRIVER_FAT_BUFFER_PTR,
             )
@@ -387,8 +399,8 @@ impl FATDriver {
         }
 
         Ok(FATFile {
-            start_cluster: entry.first_cluster_low,
-            size_bytes: entry.file_size,
+            start_cluster: entry.first_cluster_low(),
+            size_bytes: entry.file_size(),
             driver: self,
         })
     }
