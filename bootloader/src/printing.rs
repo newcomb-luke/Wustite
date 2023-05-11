@@ -13,6 +13,15 @@ impl Printer {
     }
 
     fn print_char(&self, c: char) {
+        if c == '\n' {
+            self.raw_print_char('\r');
+            self.raw_print_char('\n');
+        } else {
+            self.raw_print_char(c);
+        }
+    }
+
+    fn raw_print_char(&self, c: char) {
         unsafe {
             asm!(
                 "int 0x10",
@@ -51,6 +60,6 @@ macro_rules! print {
 
 #[macro_export]
 macro_rules! println {
-    () => ($crate::print!("\r\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\r\n", format_args!($($arg)*)));
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }

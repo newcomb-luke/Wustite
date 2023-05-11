@@ -2,7 +2,7 @@ use core::mem::size_of;
 
 use crate::{
     disk::{Disk, DiskReadError, SECTOR_SIZE},
-    print, println,
+    println,
 };
 
 const FAT_DRIVER_BOOT_SECTOR_PTR: *mut u8 = 0x7c00 as *mut u8;
@@ -243,15 +243,15 @@ impl<'a> FATFile<'a> {
         let sectors_per_cluster = self.driver.boot_record.bdb_sectors_per_cluster as usize;
         let clusters_per_buffer = (FAT_DRIVER_FAT_BUFFER_SECTORS * SECTOR_SIZE as u16) / 12;
 
-        println!("Start cluster: {:02x}", self.start_cluster);
-
         if self.driver.boot_record.bdb_sectors_per_cluster > 2 {
             return Err(FATDriverError::UnsupportedSectorsPerClusterError);
         }
 
+        println!("Bytes remaining: {}", bytes_remaining);
+
         self.load_fat_section(previous_fat_section)?;
 
-        while bytes_read < bytes_remaining {
+        while bytes_read < self.size_bytes {
             self.load_cluster(current_cluster)?;
 
             // Copy the data into the buffer
@@ -261,14 +261,13 @@ impl<'a> FATFile<'a> {
                 buffer[bytes_read as usize + b] = byte;
             }
             bytes_read += bytes_to_copy as u32;
+            bytes_remaining = (self.size_bytes - bytes_read).min(buffer.len() as u32);
 
             let new_fat_sector = sector_of_fat(current_cluster);
             let new_fat_section = section_of_fat(new_fat_sector);
 
             if new_fat_section != previous_fat_section {
-                println!("Loading new fat section!");
-
-                self.load_fat_section(new_fat_section);
+                self.load_fat_section(new_fat_section)?;
 
                 previous_fat_sector = new_fat_sector;
                 previous_fat_section = new_fat_section;
@@ -277,8 +276,6 @@ impl<'a> FATFile<'a> {
             let local_cluster = current_cluster - previous_fat_section * clusters_per_buffer;
             let read_offset = local_cluster % 2 != 0;
             let local_index = (local_cluster * 3) / 2;
-
-            println!("Local cluster: {:03x}", local_cluster);
 
             let data_ptr =
                 unsafe { FAT_DRIVER_FAT_BUFFER_PTR.offset(local_index as isize) } as *const u16;
@@ -303,31 +300,6 @@ impl<'a> FATFile<'a> {
 
             current_cluster = next_cluster;
         }
-
-        let mut local_index = 0;
-        let mut read_offset = false;
-        for _ in 0..8 {
-            let data_ptr =
-                unsafe { FAT_DRIVER_FAT_BUFFER_PTR.offset(local_index as isize) } as *const u16;
-            let data = unsafe { data_ptr.read_unaligned() };
-
-            let cluster = if read_offset {
-                ((data & 0xFF00) >> 4) | ((data & 0xF0) >> 4)
-            } else {
-                data & 0x0FFF
-            };
-
-            print!("{:03x} ", cluster);
-
-            if read_offset {
-                local_index += 1;
-            }
-
-            local_index += 1;
-            read_offset = !read_offset;
-        }
-
-        println!();
 
         Ok(bytes_read as usize)
     }

@@ -73,22 +73,28 @@ pub extern "C" fn entry() -> ! {
     let kernel_read_location =
         unsafe { core::slice::from_raw_parts_mut(KERNEL_READ_LOCATION, KERNEL_READ_LOCATION_SIZE) };
 
-    match file.read(kernel_read_location) {
+    let bytes_read = match file.read(kernel_read_location) {
         Ok(bytes_read) => {
             println!("Read {} bytes", bytes_read);
+
+            bytes_read
         }
         Err(e) => {
-            println!("Failed to read file");
+            println!("Failed to read file: {:?}", e);
 
             loop {}
         }
-    }
+    };
 
-    if let Err(_) = enable_a20() {
-        println!("A20 line failed to enable.");
+    let text = core::str::from_utf8(&kernel_read_location[0..bytes_read]).unwrap();
 
-        loop {}
-    }
+    println!("{}", text);
+
+    // if let Err(_) = enable_a20() {
+    //     println!("A20 line failed to enable.");
+
+    //     loop {}
+    // }
 
     loop {}
 }
