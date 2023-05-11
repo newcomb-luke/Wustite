@@ -47,7 +47,7 @@ pub extern "C" fn entry() -> ! {
         }
     };
 
-    let file_name_str = "test.txt";
+    let file_name_str = "kernel.o";
 
     let file_name = match FileName::try_from(file_name_str) {
         Ok(file_name) => file_name,
@@ -86,9 +86,11 @@ pub extern "C" fn entry() -> ! {
         }
     };
 
-    let text = core::str::from_utf8(&kernel_read_location[0..bytes_read]).unwrap();
+    let kernel_mem_slice = &kernel_read_location[0..bytes_read];
 
-    println!("{}", text);
+    for i in 0..4 {
+        print!("{:02x} ", kernel_mem_slice[i]);
+    }
 
     // if let Err(_) = enable_a20() {
     //     println!("A20 line failed to enable.");

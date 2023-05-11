@@ -301,15 +301,6 @@ impl<'a> FATFile<'a> {
                 }
             }
 
-            for i in 0..300000 {
-                unsafe {
-                    let v1 = (0x10 as *const u8).read_volatile();
-                    let v2 = 0x11 as *mut u8;
-
-                    *v2 = v1;
-                }
-            }
-
             current_cluster = next_cluster;
         }
 
