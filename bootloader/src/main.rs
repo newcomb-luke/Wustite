@@ -6,6 +6,7 @@ use core::panic::PanicInfo;
 
 mod a20;
 mod disk;
+mod elf;
 mod fat;
 mod gdt;
 mod printing;
@@ -14,6 +15,7 @@ use a20::enable_a20;
 use gdt::GlobalDescriptorTable;
 
 use crate::disk::Disk;
+use crate::elf::validate_elf;
 use crate::fat::{FATDriver, FileName};
 
 static GDT: GlobalDescriptorTable = GlobalDescriptorTable::unreal();
@@ -24,13 +26,18 @@ const KERNEL_READ_LOCATION: *mut u8 = 0x00020000 as *mut u8;
 const KERNEL_READ_LOCATION_SIZE: usize = 0x00050000;
 
 #[no_mangle]
-#[link_section = ".entry"]
-pub extern "C" fn entry() -> ! {
+pub extern "C" fn bootloader_entry() -> ! {
     enter_unreal_mode();
 
-    let drive_number: u8 = unsafe { *DRIVE_NUM_PTR };
+    if enable_a20().is_err() {
+        println!("A20 line failed to enable.");
 
-    println!("Reached bootloader!");
+        loop {}
+    }
+
+    println!("Enabled A20 line");
+
+    let drive_number: u8 = unsafe { *DRIVE_NUM_PTR };
 
     let boot_disk = if let Ok(boot_disk) = Disk::from_drive(drive_number) {
         boot_disk
@@ -75,7 +82,7 @@ pub extern "C" fn entry() -> ! {
 
     let bytes_read = match file.read(kernel_read_location) {
         Ok(bytes_read) => {
-            println!("Read {} bytes", bytes_read);
+            println!("Kernel was {} bytes", bytes_read);
 
             bytes_read
         }
@@ -86,17 +93,9 @@ pub extern "C" fn entry() -> ! {
         }
     };
 
-    let kernel_mem_slice = &kernel_read_location[0..bytes_read];
-
-    for i in 0..4 {
-        print!("{:02x} ", kernel_mem_slice[i]);
+    if let Err(e) = validate_elf(KERNEL_READ_LOCATION) {
+        println!("Failed to validate ELF file: {:?}", e);
     }
-
-    // if let Err(_) = enable_a20() {
-    //     println!("A20 line failed to enable.");
-
-    //     loop {}
-    // }
 
     loop {}
 }

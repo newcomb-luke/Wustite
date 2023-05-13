@@ -6,7 +6,13 @@ SECTIONS {
     . = origin;
 
     .text : { *(.entry) *(.text .text.*) }
-    .bss : { *(.bss .bss.*) }
+
+    .bss : {
+        __bss_start = .;
+        *(.bss .bss.*)
+        __bss_end = .;
+    }
+
     .rodata : { *(.rodata .rodata.*) }
     .data : { *(.data .data.*) }
     .eh_frame : { *(.eh_frame .eh_frame.*) }

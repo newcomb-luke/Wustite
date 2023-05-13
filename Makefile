@@ -21,6 +21,8 @@ $(BUILD_DIR)/boot_sector.bin: always
 bootloader: $(BUILD_DIR)/bootloader.bin
 
 $(BUILD_DIR)/bootloader.bin: always FORCE
+	nasm -f elf bootloader/src/entry.asm -o target/i686-none-eabi/entry.o
+	ar rcs bootloader/libentry.a target/i686-none-eabi/entry.o
 	cargo build --release -Z build-std=core --target=i686-none-eabi.json --package=bootloader
 	objcopy -I elf32-i386 -O binary target/i686-none-eabi/release/bootloader $(BUILD_DIR)/bootloader.bin
 
@@ -44,7 +46,7 @@ $(BUILD_DIR)/boot_floppy.img: boot_sector bootloader kernel
 kernel: $(BUILD_DIR)/kernel.o
 
 $(BUILD_DIR)/kernel.o: always FORCE
-	cargo build --release -Z build-std=core --target=x86_64-none-eabi.json --package=kernel
+	RUSTFLAGS="-C code-model=kernel -C relocation-model=static" cargo build --release -Z build-std=core --target=x86_64-none-eabi.json --package=kernel
 	cp target/x86_64-none-eabi/release/kernel $(BUILD_DIR)/kernel.o
 
 FORCE: ;

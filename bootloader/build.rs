@@ -11,4 +11,6 @@ fn main() {
         "cargo:rustc-link-arg=-Map={}",
         local_path.join("bootloader.map").display()
     );
+    println!("cargo:rustc-link-search={}", local_path.display());
+    println!("cargo:rustc-link-lib=entry");
 }

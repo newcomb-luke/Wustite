@@ -17,6 +17,7 @@ Cargo.lock
 *.obj
 *.ini
 *.o
+*.a
 
 # Clion
 .idea
