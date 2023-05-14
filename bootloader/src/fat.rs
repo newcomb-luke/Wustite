@@ -1,6 +1,9 @@
 use core::mem::size_of;
 
-use crate::disk::{Disk, DiskReadError, SECTOR_SIZE};
+use crate::{
+    disk::{Disk, DiskReadError, SECTOR_SIZE},
+    println,
+};
 
 const FAT_DRIVER_BOOT_SECTOR_PTR: *mut u8 = 0x7c00 as *mut u8;
 

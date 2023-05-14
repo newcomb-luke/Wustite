@@ -9,27 +9,27 @@
 jmp short _start
 nop
 
-bdb_oem:			db "MSWIN4.1"
+bdb_oem:			        db "MSWIN4.1"
 bdb_bytes_per_sector: 		dw 512
 bdb_sectors_per_cluster: 	db 1
 bdb_reserved_sectors: 		dw 1
-bdb_fat_count:			db 2
+bdb_fat_count:			    db 2
 bdb_dir_entries_count:		dw 0xe0
-bdb_total_sectors:		dw 2880 			; 1.44 MB
+bdb_total_sectors:		    dw 2880 			; 1.44 MB
 bdb_media_descriptor_type: 	db 0xf0 			; 3.5 inch floppy disk
 bdb_sectors_per_fat: 		dw 9
 bdb_sectors_per_track: 		dw 18
-bdb_head_count:			dw 2
+bdb_head_count:			    dw 2
 bdb_hidden_sectors: 		dd 0
-bdb_large_sectors:		dd 0
+bdb_large_sectors:		    dd 0
 
 ; Extended Boot Record
-ebr_drive_number: 		db 0x00 			; 0x00 floppy, 0x80 hdd
-				db 0    			; Reserved
-ebr_signature: 			db 0x29
-ebr_volume_id:			db 0x12, 0x34, 0x56, 0x78
-ebr_volume_label:		db "WUSTITEBOOT" 		; Must be 11 bytes long, padded with spaces
-ebr_system_id:			db "FAT12   " 			; Must be 8 bytes long, padded with spaces
+ebr_drive_number: 		    db 0x00 			; 0x00 floppy, 0x80 hdd
+				            db 0    			; Reserved
+ebr_signature: 			    db 0x29
+ebr_volume_id:			    db 0x12, 0x34, 0x56, 0x78
+ebr_volume_label:		    db "WUSTITEBOOT" 		; Must be 11 bytes long, padded with spaces
+ebr_system_id:			    db "FAT12   " 			; Must be 8 bytes long, padded with spaces
 
 ; END FAT12 HEADER
 
@@ -52,10 +52,6 @@ _start:
 	; BIOS should set dl to the drive number we have booted from
 	; store it
 	mov [ebr_drive_number], dl
-
-	; Provide the boot drive number in memory at address 0x10
-    mov dl, [ebr_drive_number]
-	mov [0x10], dl
 
     cld
 
@@ -217,6 +213,9 @@ _start:
 	mov ds, ax
 	mov es, ax
 
+    mov ax, [ebr_drive_number]
+    push ax
+
 	jmp SECONDARY_LOAD_SEGMENT:SECONDARY_LOAD_OFFSET
 	
 	; just in case
@@ -351,7 +350,7 @@ SECONDARY_NOT_FOUND_MSG: 	db "BOOT.BIN not found", 0x0a, 0x0d, 0
 SECONDARY_CLUSTER_PTR:	    dw 0
 
 SECONDARY_LOAD_SEGMENT 	    equ 0x0000
-SECONDARY_LOAD_OFFSET 	    equ 0x0500
+SECONDARY_LOAD_OFFSET 	    equ 0x9400
 
 ; Padding
 times 510 - ($ - $$) db 0

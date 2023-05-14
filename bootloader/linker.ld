@@ -1,6 +1,6 @@
 ENTRY(entry)
 
-origin = 0x00000500;
+origin = 0x00009400;
 
 SECTIONS {
     . = origin;

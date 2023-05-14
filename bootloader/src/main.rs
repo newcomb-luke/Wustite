@@ -4,55 +4,55 @@
 use core::arch::asm;
 use core::panic::PanicInfo;
 
-mod a20;
 mod disk;
 mod elf;
 mod fat;
 mod gdt;
+mod long_mode;
 mod printing;
 
-use a20::enable_a20;
+use elf::load_elf;
 use gdt::GlobalDescriptorTable;
 
 use crate::disk::Disk;
-use crate::elf::validate_elf;
 use crate::fat::{FATDriver, FileName};
+use crate::long_mode::{is_cpuid_available, is_extended_cpuid_available};
 
 static GDT: GlobalDescriptorTable = GlobalDescriptorTable::unreal();
 
-const DRIVE_NUM_PTR: *const u8 = 0x10 as *const u8;
+const DRIVE_NUM_PTR: *const u8 = 0x7c24 as *const u8;
 
 const KERNEL_READ_LOCATION: *mut u8 = 0x00020000 as *mut u8;
 const KERNEL_READ_LOCATION_SIZE: usize = 0x00050000;
+const KERNEL_MAXIUMUM_SIZE: usize = 0x5ffff;
 
 #[no_mangle]
 pub extern "C" fn bootloader_entry() -> ! {
-    enter_unreal_mode();
+    let drive_number = unsafe { *DRIVE_NUM_PTR };
 
-    if enable_a20().is_err() {
-        println!("A20 line failed to enable.");
+    // if !is_cpuid_available() || !is_extended_cpuid_available() {
+    //     println!("Kernel requires x86_64.");
+    //     halt();
+    // }
 
-        loop {}
-    }
+    println!("Hello from bootloader!");
 
-    println!("Enabled A20 line");
-
-    let drive_number: u8 = unsafe { *DRIVE_NUM_PTR };
-
-    let boot_disk = if let Ok(boot_disk) = Disk::from_drive(drive_number) {
-        boot_disk
-    } else {
+    let Ok(mut boot_disk) = Disk::from_drive(drive_number) else {
         println!("Failed to read disk parameters.");
-        loop {}
+        halt();
     };
+
+    println!("Read disk parameters");
 
     let mut fat_driver = match FATDriver::new(boot_disk) {
         Ok(fat_driver) => fat_driver,
         Err(e) => {
             println!("Failed to iniailzize FAT driver: {:?}", e);
-            loop {}
+            halt();
         }
     };
+
+    println!("Initialized FAT driver");
 
     let file_name_str = "kernel.o";
 
@@ -63,8 +63,7 @@ pub extern "C" fn bootloader_entry() -> ! {
                 "Failed to convert file name {} into 8.3 format",
                 file_name_str
             );
-
-            loop {}
+            halt();
         }
     };
 
@@ -72,10 +71,11 @@ pub extern "C" fn bootloader_entry() -> ! {
         Ok(file) => file,
         Err(e) => {
             println!("Failed to open file: {:?}", e);
-
-            loop {}
+            halt();
         }
     };
+
+    println!("Opened file");
 
     let kernel_read_location =
         unsafe { core::slice::from_raw_parts_mut(KERNEL_READ_LOCATION, KERNEL_READ_LOCATION_SIZE) };
@@ -88,45 +88,36 @@ pub extern "C" fn bootloader_entry() -> ! {
         }
         Err(e) => {
             println!("Failed to read file: {:?}", e);
-
-            loop {}
+            halt();
         }
     };
 
-    if let Err(e) = validate_elf(KERNEL_READ_LOCATION) {
-        println!("Failed to validate ELF file: {:?}", e);
+    println!("Read file");
+
+    if bytes_read > KERNEL_MAXIUMUM_SIZE {
+        println!("Kernel size exceeds maximum available.");
     }
 
-    loop {}
+    let entry_point = match load_elf(KERNEL_READ_LOCATION) {
+        Ok(entry_point) => {
+            println!("Loaded kernel. Entry point: {:08x}", entry_point);
+
+            entry_point
+        }
+        Err(e) => {
+            println!("Failed to load ELF file: {:?}", e);
+            halt();
+        }
+    };
+
+    halt();
 }
 
-fn enter_unreal_mode() {
-    let ds: u16;
-    let ss: u16;
-
-    unsafe {
-        asm!("mov {:x}, ds", out(reg) ds);
-        asm!("mov {:x}, ss", out(reg) ss);
-    }
-
-    GDT.load();
-
-    unsafe {
-        let mut cr0: u32;
-        asm!("mov {:e}, cr0", out(reg) cr0);
-
-        // Enter protected mode
-        let new_cr0 = cr0 | 1;
-        asm!("mov cr0, {:e}", in(reg) new_cr0);
-
-        // Initialize segment registers
-        asm!("mov {0:x}, 0x10", "mov ds, {0:x}", "mov ss, {0:x}", out(reg) _);
-
-        // Enter back into real mode
-        asm!("mov cr0, {:e}", in(reg) cr0);
-
-        asm!("mov ds, {:x}", in(reg) ds);
-        asm!("mov ss, {:x}", in(reg) ss);
+fn halt() -> ! {
+    loop {
+        unsafe {
+            asm!("cli");
+        }
     }
 }
 

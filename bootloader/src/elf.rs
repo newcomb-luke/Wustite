@@ -49,15 +49,8 @@ enum SegmentType {
     GNUEHFrame = 0x6474e550,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum SegmentParseError {
-    UnknownSegmentType,
-}
-
-impl TryFrom<u32> for SegmentType {
-    type Error = SegmentParseError;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
+impl SegmentType {
+    fn try_from(value: u32) -> Result<Self, ()> {
         match value {
             0 => Ok(Self::Null),
             1 => Ok(Self::Load),
@@ -69,7 +62,7 @@ impl TryFrom<u32> for SegmentType {
             7 => Ok(Self::Tls),
             0x6474e551 => Ok(Self::GNUStack),
             0x6474e550 => Ok(Self::GNUEHFrame),
-            _ => Err(Self::Error::UnknownSegmentType),
+            _ => Err(()),
         }
     }
 }
@@ -105,8 +98,7 @@ struct Elf64ProgramHeaderEntry {
 
 impl Elf64ProgramHeaderEntry {
     fn segment_type(&self) -> Option<SegmentType> {
-        (unsafe { core::ptr::addr_of!(self.segment_type).read_unaligned() })
-            .try_into()
+        SegmentType::try_from(unsafe { core::ptr::addr_of!(self.segment_type).read_unaligned() })
             .ok()
     }
 
@@ -179,6 +171,43 @@ impl Elf64ProgramHeaderEntry {
             println!("-");
         }
     }
+
+    fn load(&self, bytes: *const u8) -> Result<(), ElfLoadError> {
+        if let Some(seg_type) = self.segment_type() {
+            if seg_type != SegmentType::Load {
+                return Ok(());
+            }
+        } else {
+            return Err(ElfLoadError::UnknownSegmentTypeError);
+        }
+
+        let virtual_address = self.virtual_address() as *mut u8;
+        let segment_address = unsafe { bytes.offset(self.offset() as isize) };
+
+        unsafe {
+            segment_address.copy_to_nonoverlapping(virtual_address, self.size_in_file() as usize)
+        };
+
+        let bytes_to_zero = self.size_in_memory() - self.size_in_file();
+        let zero_start = unsafe { virtual_address.offset(self.size_in_file() as isize) };
+
+        unsafe {
+            zero_start.write_bytes(0, bytes_to_zero as usize);
+        }
+
+        // println!(
+        //     "Loaded {:08x} bytes into memory at address {:?}",
+        //     self.size_in_file(),
+        //     virtual_address
+        // );
+
+        // println!(
+        //     "Zeroed {:08x} remaining bytes in memory at address {:?}",
+        //     bytes_to_zero, virtual_address
+        // );
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -243,6 +272,20 @@ impl Elf64Header {
             entry.print();
         }
     }
+
+    fn load_program_headers(&self, bytes: *const u8) -> Result<(), ElfLoadError> {
+        let entry_ptr = unsafe {
+            (bytes.offset(self.program_header_table_offset() as isize))
+                as *const Elf64ProgramHeaderEntry
+        };
+
+        for i in 0..self.program_header_table_num_entries() as isize {
+            let entry = unsafe { entry_ptr.offset(i).as_ref().unwrap() };
+            entry.load(bytes)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -284,5 +327,23 @@ pub fn validate_elf(bytes: *const u8) -> Result<(), ElfReadError> {
 
     header.print_program_header_table(bytes);
 
-    todo!()
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ElfLoadError {
+    ElfReadError(ElfReadError),
+    UnknownSegmentTypeError,
+}
+
+/// This function attempts to load an ELF file into memory, and then returns
+/// the entry point of the executable
+pub fn load_elf(bytes: *const u8) -> Result<u64, ElfLoadError> {
+    let header = unsafe { (bytes as *const Elf64Header).as_ref().unwrap() };
+
+    validate_elf(bytes).map_err(|e| ElfLoadError::ElfReadError(e))?;
+
+    header.load_program_headers(bytes)?;
+
+    Ok(header.entry_point())
 }

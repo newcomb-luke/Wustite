@@ -5,6 +5,28 @@ use core::arch::asm;
 const DISK_DRIVER_READ_BUFFER: *mut u8 = 0x00007E00 as *mut u8;
 pub const SECTOR_SIZE: usize = 512;
 
+#[link(name = "bios")]
+extern "cdecl" {
+    fn _BIOS_Drive_Reset(drive_number: u8) -> u16;
+
+    fn _BIOS_Drive_GetParams(
+        drive_number: u8,
+        drive_type: *mut u8,
+        max_head: *mut u8,
+        max_cylinder: *mut u16,
+        max_sector: *mut u8,
+    ) -> u16;
+
+    fn _BIOS_Drive_ReadSectors(
+        drive_number: u8,
+        head: u8,
+        cylinder: u16,
+        sector: u8,
+        sector_count: u8,
+        data_destination: *mut u8,
+    ) -> u16;
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum DiskReadError {
     DiskResetFailed,
@@ -48,24 +70,7 @@ impl Disk {
     }
 
     pub fn reset(&mut self) -> Result<(), ()> {
-        let success: u16;
-
-        unsafe {
-            asm!(
-                "stc",
-                "int 0x13",
-                 "jc 3f",
-                 // Success
-                 "2: xor ax, ax",
-                 "jmp 4f",
-                 // Failure
-                 "3: mov ax, 1",
-                 "4: nop",
-                in("ah") 0x00u8,
-                in("dl") self.drive_number,
-                lateout("ax") success
-            );
-        }
+        let success = unsafe { _BIOS_Drive_Reset(self.drive_number) };
 
         if success == 0 {
             Ok(())
@@ -117,46 +122,16 @@ impl Disk {
     }
 
     fn bios_read_sector(&mut self, chs: CHS) -> Result<(), ()> {
-        // AH = 0x02
-        // AL = number of sectors to read (must be nonzero)
-        // CH = low eight bits of cylinder number
-        // CL = sector number 1-63 (bits 0-5)
-        // high two bits of cylinder (bits 6-7, hard disk only)
-        // DH = head number
-        // DL = drive number (bit 7 set for hard disk)
-        // ES:BX -> data buffer
-
-        let ch = (chs.cylinder & 0x00FF) as u8;
-        let cl_sector = chs.sector & 0b00111111;
-        let cl_cylinder = (((chs.cylinder >> 8) & 0x03) << 6) as u8;
-        let cl = cl_sector | cl_cylinder;
-        let bx = DISK_DRIVER_READ_BUFFER as u16;
-
-        let success: u16;
-
-        unsafe {
-            asm!(
-                "push es",
-                "stc",
-                "int 0x13",
-                "pop es",
-                "jc 3f",
-                // Success
-                "2: xor ax, ax",
-                "jmp 4f",
-                // Failure
-                "3: mov ax, 1",
-                "4: nop",
-                in("ah") 0x02u8,
-                in("al") 1u8,
-                in("ch") ch,
-                in("cl") cl,
-                in("dh") chs.head,
-                in("dl") self.drive_number,
-                in("bx") bx,
-                lateout("ax") success,
-            );
-        }
+        let success = unsafe {
+            _BIOS_Drive_ReadSectors(
+                self.drive_number,
+                chs.head,
+                chs.cylinder,
+                chs.sector,
+                1,
+                DISK_DRIVER_READ_BUFFER,
+            )
+        };
 
         if success == 0 {
             Ok(())
@@ -166,53 +141,24 @@ impl Disk {
     }
 
     pub fn from_drive(drive_number: u8) -> Result<Self, ()> {
-        // BL = drive type (AT/PS2 floppies only) (see #00242)
-        // CH = low eight bits of maximum cylinder number
-        // CL = maximum sector number (bits 5-0)
-        // high two bits of maximum cylinder number (bits 7-6)
-        // DH = maximum head number
-        // DL = number of drives
+        let mut drive_type = 0;
+        let mut max_head = 0;
+        let mut max_cylinder = 0;
+        let mut max_sector = 0;
 
-        let drive_type: u8;
-        let ch: u8;
-        let cl: u8;
-        let dh: u8;
-        let success: u16;
-
-        unsafe {
-            asm!(
-                 "push es",
-                 "push di",
-                 "xor di, di",
-                 "mov es, di",
-                 "stc",
-                 "int 0x13",
-                 "pop di",
-                 "pop es",
-                 "jc 3f",
-                 // Success
-                 "2: xor ax, ax",
-                 "jmp 4f",
-                 // Failure
-                 "3: mov ax, 1",
-                 "4: nop",
-                 in("ah") 8u8,
-                 in("dx") drive_number as u16,
-                 lateout("bl") drive_type,
-                 lateout("ch") ch,
-                 lateout("cl") cl,
-                 lateout("dh") dh,
-                 lateout("ax") success
-            );
-        }
+        let success = unsafe {
+            _BIOS_Drive_GetParams(
+                drive_number,
+                core::ptr::addr_of_mut!(drive_type),
+                core::ptr::addr_of_mut!(max_head),
+                core::ptr::addr_of_mut!(max_cylinder),
+                core::ptr::addr_of_mut!(max_sector),
+            )
+        };
 
         if success != 0 {
             return Err(());
         }
-
-        let max_cylinder: u16 = ch as u16 | ((cl as u16) & 0b11000000);
-        let max_head: u8 = dh;
-        let max_sector: u8 = cl & 0b00111111;
 
         Ok(Disk {
             drive_number,

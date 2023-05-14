@@ -1,6 +1,11 @@
 use core::arch::asm;
 use core::fmt::Write;
 
+#[link(name = "bios")]
+extern "cdecl" {
+    fn _BIOS_Video_WriteCharTeletype(c: u8);
+}
+
 static mut PRINTER: Printer = Printer {};
 
 struct Printer {}
@@ -23,12 +28,7 @@ impl Printer {
 
     fn raw_print_char(&self, c: char) {
         unsafe {
-            asm!(
-                "int 0x10",
-                in("al") c as u8,
-                in("ah") 0x0eu8,
-                in("bx") 0u16
-            );
+            _BIOS_Video_WriteCharTeletype(c as u8);
         }
     }
 }
