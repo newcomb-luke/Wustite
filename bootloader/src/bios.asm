@@ -96,6 +96,7 @@ _BIOS_Memory_GetNextSegment:
     mov eax, 0x0000E820
     int 0x15
     jc .failed
+    mov edx, 0x534D4150
     cmp eax, edx		; on success, eax must have been reset to "SMAP"
     jne .failed
     jmp .success

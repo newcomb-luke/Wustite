@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use core::arch::asm;
-
 const DISK_DRIVER_READ_BUFFER: *mut u8 = 0x00007E00 as *mut u8;
 pub const SECTOR_SIZE: usize = 512;
 

@@ -1,4 +1,3 @@
-use core::arch::asm;
 use core::fmt::Write;
 
 #[link(name = "bios")]

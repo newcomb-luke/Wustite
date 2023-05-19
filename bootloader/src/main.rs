@@ -9,7 +9,9 @@ mod elf;
 mod fat;
 mod gdt;
 mod long_mode;
+mod paging;
 mod printing;
+mod smap;
 
 use elf::load_elf;
 use gdt::GlobalDescriptorTable;
@@ -17,10 +19,12 @@ use gdt::GlobalDescriptorTable;
 use crate::disk::Disk;
 use crate::fat::{FATDriver, FileName};
 use crate::long_mode::{is_cpuid_available, is_extended_cpuid_available};
+use crate::paging::identity_map_mem;
+use crate::smap::detect_memory_regions;
 
 static GDT: GlobalDescriptorTable = GlobalDescriptorTable::unreal();
 
-const DRIVE_NUM_PTR: *const u8 = 0x7c24 as *const u8;
+const DRIVE_NUM_PTR: *mut u8 = 0x7c24 as *mut u8;
 
 const KERNEL_READ_LOCATION: *mut u8 = 0x00020000 as *mut u8;
 const KERNEL_READ_LOCATION_SIZE: usize = 0x00050000;
@@ -30,10 +34,10 @@ const KERNEL_MAXIUMUM_SIZE: usize = 0x5ffff;
 pub extern "C" fn bootloader_entry() -> ! {
     let drive_number = unsafe { *DRIVE_NUM_PTR };
 
-    // if !is_cpuid_available() || !is_extended_cpuid_available() {
-    //     println!("Kernel requires x86_64.");
-    //     halt();
-    // }
+    if !is_cpuid_available() || !is_extended_cpuid_available() {
+        println!("Kernel requires x86_64.");
+        halt();
+    }
 
     println!("Hello from bootloader!");
 
@@ -109,6 +113,15 @@ pub extern "C" fn bootloader_entry() -> ! {
             halt();
         }
     };
+
+    identity_map_mem();
+
+    // Just in case something happened to it
+    unsafe { *DRIVE_NUM_PTR = drive_number };
+
+    if let Err(e) = detect_memory_regions() {
+        println!("Error detecting memory: {:?}", e);
+    }
 
     halt();
 }
