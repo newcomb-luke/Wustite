@@ -12,7 +12,7 @@ entry:
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, 0x7bf0
+    mov sp, 0x7b00
     mov bp, sp
 
     ; Enable the A20 line

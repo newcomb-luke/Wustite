@@ -18,7 +18,7 @@ const KERNEL_STACK_SIZE: u64 = 0x00100000;
 
 #[link(name = "bios")]
 extern "cdecl" {
-    fn _BIOS_Memory_GetNextSegment(entry: *mut SMAPEntry, continuation_id: *mut u32) -> i32;
+    fn _BIOS_Memory_GetNextSegment(entry: *mut [u8; 24], continuation_id: *mut u32) -> i32;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -31,28 +31,9 @@ enum SMAPEntryType {
     Unknown,
 }
 
-#[derive(Clone, Copy)]
-#[repr(C, packed)]
-struct SMAPEntry {
-    base: u64,
-    length: u64,
-    entry_type: u32,
-    acpi: u32,
-}
-
-impl SMAPEntry {
-    fn base(&self) -> u64 {
-        unsafe { core::ptr::addr_of!(self.base).read_unaligned() }
-    }
-
-    fn length(&self) -> u64 {
-        unsafe { core::ptr::addr_of!(self.length).read_unaligned() }
-    }
-
-    fn entry_type(&self) -> SMAPEntryType {
-        let entry_type = unsafe { core::ptr::addr_of!(self.entry_type).read_unaligned() };
-
-        match entry_type {
+impl From<u32> for SMAPEntryType {
+    fn from(value: u32) -> Self {
+        match value {
             1 => SMAPEntryType::Usable,
             2 => SMAPEntryType::Reserved,
             3 => SMAPEntryType::ACPIReclaimable,
@@ -61,20 +42,47 @@ impl SMAPEntry {
             _ => SMAPEntryType::Unknown,
         }
     }
+}
 
-    fn acpi(&self) -> u32 {
-        unsafe { core::ptr::addr_of!(self.acpi).read_unaligned() }
-    }
+#[derive(Clone, Copy)]
+struct SMAPEntry {
+    pub base: u64,
+    pub length: u64,
+    pub entry_type: SMAPEntryType,
+    pub acpi: u32,
 }
 
 impl Display for SMAPEntry {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_fmt(format_args!(
-            "Entry base: 0x{:08x}, size: 0x{:08x}, type: {:?}",
-            self.base(),
-            self.length(),
-            self.entry_type()
+            "Entry base: 0x{:016x}, size: 0x{:016x}, type: {:?}",
+            self.base, self.length, self.entry_type
         ))
+    }
+}
+
+impl From<[u8; 24]> for SMAPEntry {
+    fn from(value: [u8; 24]) -> Self {
+        let mut base_bytes: [u8; 8] = [0; 8];
+        base_bytes.copy_from_slice(&value[0..8]);
+        let mut length_bytes: [u8; 8] = [0; 8];
+        length_bytes.copy_from_slice(&value[8..16]);
+        let mut entry_type_bytes: [u8; 4] = [0; 4];
+        entry_type_bytes.copy_from_slice(&value[16..20]);
+        let mut acpi_bytes: [u8; 4] = [0; 4];
+        acpi_bytes.copy_from_slice(&value[20..24]);
+
+        let base = u64::from_ne_bytes(base_bytes);
+        let length = u64::from_ne_bytes(length_bytes);
+        let entry_type_raw = u32::from_ne_bytes(entry_type_bytes);
+        let acpi = u32::from_ne_bytes(acpi_bytes);
+
+        SMAPEntry {
+            base,
+            length,
+            entry_type: entry_type_raw.into(),
+            acpi,
+        }
     }
 }
 
@@ -144,39 +152,23 @@ impl SMAPEntriesReader {
 impl Iterator for SMAPEntriesReader {
     type Item = SMAPEntry;
 
-    #[inline(never)]
     fn next(&mut self) -> Option<Self::Item> {
         if !self.first && (self.bytes_read <= 0 || self.continuation_id == 0) {
             return None;
         }
         self.first = false;
 
-        let mut entry = core::mem::MaybeUninit::zeroed();
+        let mut buffer: [u8; 24] = [0; 24];
 
-        self.bytes_read = unsafe {
-            _BIOS_Memory_GetNextSegment(
-                entry.as_mut_ptr(),
-                core::ptr::addr_of_mut!(self.continuation_id),
-            )
-        };
+        self.bytes_read =
+            unsafe { _BIOS_Memory_GetNextSegment(&mut buffer, &mut self.continuation_id) };
 
         // Signals an error
         if self.bytes_read < 0 {
-            return None;
+            None
+        } else {
+            Some(buffer.into())
         }
-
-        let mut real_entry: core::mem::MaybeUninit<SMAPEntry> = core::mem::MaybeUninit::zeroed();
-        unsafe {
-            real_entry.as_mut_ptr().write(entry.assume_init());
-        }
-
-        println!("{:?}", core::ptr::addr_of!(real_entry));
-
-        println!("{}", unsafe { real_entry.assume_init() });
-
-        unimplemented!();
-
-        Some(unsafe { real_entry.assume_init() })
     }
 }
 
@@ -186,41 +178,41 @@ struct SMAPEntries {
 }
 
 impl SMAPEntries {
-    fn add_entry(&mut self, entry: SMAPEntry) -> Result<(), MemoryDetectionError> {
-        if self.num_entries >= u8::MAX as usize {
-            return Err(MemoryDetectionError::TooManyRegionsError);
-        }
+    // fn add_entry(&mut self, entry: SMAPEntry) -> Result<(), MemoryDetectionError> {
+    //     if self.num_entries >= u8::MAX as usize {
+    //         return Err(MemoryDetectionError::TooManyRegionsError);
+    //     }
 
-        let next_entry_addr = if self.num_entries() == 0 {
-            SMAP_ENTRIES_START
-        } else {
-            unsafe { SMAP_ENTRIES_START.offset(self.num_entries as isize) }
-        };
-        unsafe { next_entry_addr.write(entry) };
-        self.num_entries += 1;
+    //     let next_entry_addr = if self.num_entries() == 0 {
+    //         SMAP_ENTRIES_START
+    //     } else {
+    //         unsafe { SMAP_ENTRIES_START.offset(self.num_entries as isize) }
+    //     };
+    //     unsafe { next_entry_addr.write(entry) };
+    //     self.num_entries += 1;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     /// This function will succeed as long as the place where the SMAPEntry's are being stored.
     /// References must be aligned, and on 32 and 64 bit, SMAPEntry's will be aligned in memory.
-    unsafe fn get_entry(&self, index: usize) -> Option<&'static SMAPEntry> {
-        if index >= self.num_entries() {
-            return None;
-        }
+    // unsafe fn get_entry(&self, index: usize) -> Option<&'static SMAPEntry> {
+    //     if index >= self.num_entries() {
+    //         return None;
+    //     }
 
-        let entry_addr = unsafe { SMAP_ENTRIES_START.offset(index as isize) };
+    //     let entry_addr = unsafe { SMAP_ENTRIES_START.offset(index as isize) };
 
-        unsafe { entry_addr.as_ref() }
-    }
+    //     unsafe { entry_addr.as_ref() }
+    // }
 
     fn read_from_bios() -> Result<Self, MemoryDetectionError> {
         let mut entries = Self { num_entries: 0 };
 
         let mut entries_reader = SMAPEntriesReader::new();
 
-        for entry in entries_reader {
-            entries.add_entry(entry)?;
+        for mut entry in entries_reader {
+            println!("{entry}");
         }
 
         Ok(entries)
@@ -252,24 +244,30 @@ impl Iterator for SMAPEntriesIterator {
     type Item = &'static SMAPEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let entry = unsafe { self.entries.get_entry(self.next_entry) }?;
+        // let entry = unsafe { self.entries.get_entry(self.next_entry) }?;
+        let entry = SMAPEntry {
+            base: 0xf,
+            length: 0x20,
+            entry_type: SMAPEntryType::Reserved,
+            acpi: 0,
+        };
 
         self.next_entry += 1;
 
-        Some(entry)
+        todo!();
     }
 }
 
 pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
     // Initialize the global memory regions descriptor
-    let memory_regions_descriptor = unsafe {
-        MEMORY_REGIONS_DESCRIPTOR_ADDR.write(MemoryRegionsDescriptor {
-            num_regions: 0,
-            start: MEMORY_REGIONS_START_ADDR,
-        });
+    // let memory_regions_descriptor = unsafe {
+    //     MEMORY_REGIONS_DESCRIPTOR_ADDR.write(MemoryRegionsDescriptor {
+    //         num_regions: 0,
+    //         start: MEMORY_REGIONS_START_ADDR,
+    //     });
 
-        MEMORY_REGIONS_DESCRIPTOR_ADDR.as_mut().unwrap()
-    };
+    //     MEMORY_REGIONS_DESCRIPTOR_ADDR.as_mut().unwrap()
+    // };
 
     // Read the SMAP entries from the BIOS
     let mut smap_entries = SMAPEntries::read_from_bios()?;
@@ -301,9 +299,9 @@ pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
     })?;
     */
 
-    for entry in smap_entries {
-        println!("{}", entry);
-    }
+    // for entry in smap_entries {
+    //     println!("{}", entry);
+    // }
 
     todo!();
 }
