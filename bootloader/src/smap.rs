@@ -65,10 +65,13 @@ impl From<[u8; 24]> for SMAPEntry {
     fn from(value: [u8; 24]) -> Self {
         let mut base_bytes: [u8; 8] = [0; 8];
         base_bytes.copy_from_slice(&value[0..8]);
+
         let mut length_bytes: [u8; 8] = [0; 8];
         length_bytes.copy_from_slice(&value[8..16]);
+
         let mut entry_type_bytes: [u8; 4] = [0; 4];
         entry_type_bytes.copy_from_slice(&value[16..20]);
+
         let mut acpi_bytes: [u8; 4] = [0; 4];
         acpi_bytes.copy_from_slice(&value[20..24]);
 
@@ -147,14 +150,10 @@ impl SMAPEntriesReader {
             continuation_id: 0,
         }
     }
-}
 
-impl Iterator for SMAPEntriesReader {
-    type Item = SMAPEntry;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Result<Option<SMAPEntry>, MemoryDetectionError> {
         if !self.first && (self.bytes_read <= 0 || self.continuation_id == 0) {
-            return None;
+            return Ok(None);
         }
         self.first = false;
 
@@ -165,9 +164,9 @@ impl Iterator for SMAPEntriesReader {
 
         // Signals an error
         if self.bytes_read < 0 {
-            None
+            Err(MemoryDetectionError::BIOSError)
         } else {
-            Some(buffer.into())
+            Ok(Some(buffer.into()))
         }
     }
 }
@@ -178,41 +177,41 @@ struct SMAPEntries {
 }
 
 impl SMAPEntries {
-    // fn add_entry(&mut self, entry: SMAPEntry) -> Result<(), MemoryDetectionError> {
-    //     if self.num_entries >= u8::MAX as usize {
-    //         return Err(MemoryDetectionError::TooManyRegionsError);
-    //     }
+    fn add_entry(&mut self, entry: SMAPEntry) -> Result<(), MemoryDetectionError> {
+        if self.num_entries >= u8::MAX as usize {
+            return Err(MemoryDetectionError::TooManyRegionsError);
+        }
 
-    //     let next_entry_addr = if self.num_entries() == 0 {
-    //         SMAP_ENTRIES_START
-    //     } else {
-    //         unsafe { SMAP_ENTRIES_START.offset(self.num_entries as isize) }
-    //     };
-    //     unsafe { next_entry_addr.write(entry) };
-    //     self.num_entries += 1;
+        let next_entry_addr = if self.num_entries() == 0 {
+            SMAP_ENTRIES_START
+        } else {
+            unsafe { SMAP_ENTRIES_START.add(self.num_entries) }
+        };
+        unsafe { next_entry_addr.write(entry) };
+        self.num_entries += 1;
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    /// This function will succeed as long as the place where the SMAPEntry's are being stored.
-    /// References must be aligned, and on 32 and 64 bit, SMAPEntry's will be aligned in memory.
-    // unsafe fn get_entry(&self, index: usize) -> Option<&'static SMAPEntry> {
-    //     if index >= self.num_entries() {
-    //         return None;
-    //     }
+    // This function will succeed as long as the place where the SMAPEntry's are being stored.
+    // References must be aligned, and on 32 and 64 bit, SMAPEntry's will be aligned in memory.
+    unsafe fn get_entry(&self, index: usize) -> Option<&'static SMAPEntry> {
+        if index >= self.num_entries() {
+            return None;
+        }
 
-    //     let entry_addr = unsafe { SMAP_ENTRIES_START.offset(index as isize) };
+        let entry_addr = unsafe { SMAP_ENTRIES_START.add(index) };
 
-    //     unsafe { entry_addr.as_ref() }
-    // }
+        unsafe { entry_addr.as_ref() }
+    }
 
     fn read_from_bios() -> Result<Self, MemoryDetectionError> {
         let mut entries = Self { num_entries: 0 };
 
         let mut entries_reader = SMAPEntriesReader::new();
 
-        for mut entry in entries_reader {
-            println!("{entry}");
+        while let Some(entry) = entries_reader.next()? {
+            entries.add_entry(entry)?;
         }
 
         Ok(entries)
@@ -244,40 +243,32 @@ impl Iterator for SMAPEntriesIterator {
     type Item = &'static SMAPEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // let entry = unsafe { self.entries.get_entry(self.next_entry) }?;
-        let entry = SMAPEntry {
-            base: 0xf,
-            length: 0x20,
-            entry_type: SMAPEntryType::Reserved,
-            acpi: 0,
-        };
-
+        let entry = unsafe { self.entries.get_entry(self.next_entry) }?;
         self.next_entry += 1;
 
-        todo!();
+        Some(entry)
     }
 }
 
 pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
     // Initialize the global memory regions descriptor
-    // let memory_regions_descriptor = unsafe {
-    //     MEMORY_REGIONS_DESCRIPTOR_ADDR.write(MemoryRegionsDescriptor {
-    //         num_regions: 0,
-    //         start: MEMORY_REGIONS_START_ADDR,
-    //     });
+    let memory_regions_descriptor = unsafe {
+        MEMORY_REGIONS_DESCRIPTOR_ADDR.write(MemoryRegionsDescriptor {
+            num_regions: 0,
+            start: MEMORY_REGIONS_START_ADDR,
+        });
 
-    //     MEMORY_REGIONS_DESCRIPTOR_ADDR.as_mut().unwrap()
-    // };
+        MEMORY_REGIONS_DESCRIPTOR_ADDR.as_mut().unwrap()
+    };
 
     // Read the SMAP entries from the BIOS
     let mut smap_entries = SMAPEntries::read_from_bios()?;
 
-    /*
     // Add where the kernel is loaded, that would be bad if it wasn't included
     smap_entries.add_entry(SMAPEntry {
         base: KERNEL_EXECUTE_LOCATION,
         length: KERNEL_EXECUTE_SIZE,
-        entry_type: 2,
+        entry_type: SMAPEntryType::Reserved,
         acpi: 0,
     })?;
 
@@ -286,7 +277,7 @@ pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
     smap_entries.add_entry(SMAPEntry {
         base: KERNEL_STACK_LOCATION,
         length: KERNEL_STACK_SIZE,
-        entry_type: 2,
+        entry_type: SMAPEntryType::Reserved,
         acpi: 0,
     })?;
 
@@ -294,14 +285,18 @@ pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
     smap_entries.add_entry(SMAPEntry {
         base: PAGE_MAP_LEVEL_4_TABLE_START as u64,
         length: PAGE_TABLES_LENGTH,
-        entry_type: 2,
+        entry_type: SMAPEntryType::Reserved,
         acpi: 0,
     })?;
-    */
 
-    // for entry in smap_entries {
-    //     println!("{}", entry);
-    // }
+    for entry in smap_entries {
+        println!(
+            "Start: {:016x}, end: {:016x}, type: {:?}",
+            entry.base,
+            (entry.base + entry.length) - 1,
+            entry.entry_type
+        );
+    }
 
     todo!();
 }
