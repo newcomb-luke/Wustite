@@ -5,14 +5,13 @@ use crate::{
     println,
 };
 
-const MEMORY_REGIONS_DESCRIPTOR_ADDR: *mut MemoryRegionsDescriptor =
-    0x500 as *mut MemoryRegionsDescriptor;
-const MEMORY_REGIONS_START_ADDR: *mut MemoryRegion = 0x600 as *mut MemoryRegion;
+const MEMORY_REGIONS_DESCRIPTOR_ADDR: *mut u8 = 0x500 as *mut u8;
+const MEMORY_REGIONS_START_ADDR: *mut u64 = 0x510 as *mut u64;
 
 const SMAP_ENTRIES_START: *mut SMAPEntry = 0x00010000 as *mut SMAPEntry;
 
 const KERNEL_EXECUTE_LOCATION: u64 = 0x00100000;
-const KERNEL_EXECUTE_SIZE: u64 = 0x001FFFFF;
+const KERNEL_EXECUTE_SIZE: u64 = 0x00200000;
 const KERNEL_STACK_LOCATION: u64 = 0x00300000;
 const KERNEL_STACK_SIZE: u64 = 0x00100000;
 
@@ -21,7 +20,7 @@ extern "cdecl" {
     fn _BIOS_Memory_GetNextSegment(entry: *mut [u8; 24], continuation_id: *mut u32) -> i32;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SMAPEntryType {
     Usable = 1,
     Reserved = 2,
@@ -49,7 +48,13 @@ struct SMAPEntry {
     pub base: u64,
     pub length: u64,
     pub entry_type: SMAPEntryType,
-    pub acpi: u32,
+    pub _acpi: u32,
+}
+
+impl SMAPEntry {
+    pub fn end(&self) -> u64 {
+        (self.base + self.length) - 1
+    }
 }
 
 impl Display for SMAPEntry {
@@ -84,56 +89,204 @@ impl From<[u8; 24]> for SMAPEntry {
             base,
             length,
             entry_type: entry_type_raw.into(),
-            acpi,
+            _acpi: acpi,
         }
     }
 }
 
 #[derive(Clone, Copy)]
-#[repr(u8)]
-enum MemoryRegionType {
-    Usable = 1,
-    Reserved = 2,
-    ACPIReclaimable = 3,
-}
-
-// These are repr(C) so that they are *guaranteed* to be ABI compatible with the kernel
-// when it goes to read it
-#[repr(C)]
 struct MemoryRegion {
-    start: u64,
-    end: u64,
-    region_type: MemoryRegionType,
+    pub start: u64,
+    pub end: u64,
 }
 
-#[repr(C)]
+impl Display for MemoryRegion {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!(
+            "Start: {:016x}, end: {:016x}",
+            self.start, self.end
+        ))
+    }
+}
+
+#[derive(Clone, Copy)]
 struct MemoryRegionsDescriptor {
-    num_regions: u8,
-    start: *mut MemoryRegion,
+    num_regions: usize,
+}
+
+impl MemoryRegionsDescriptor {
+    fn new() -> Self {
+        unsafe { MEMORY_REGIONS_DESCRIPTOR_ADDR.write(0) }
+
+        Self { num_regions: 0 }
+    }
+
+    fn inc_num_regions(&mut self) -> Result<(), MemoryDetectionError> {
+        if self.num_regions >= u8::MAX as usize {
+            Err(MemoryDetectionError::TooManyRegionsError)
+        } else {
+            self.num_regions += 1;
+            unsafe { MEMORY_REGIONS_DESCRIPTOR_ADDR.write(self.num_regions as u8) }
+            Ok(())
+        }
+    }
+
+    fn get_region(&self, index: usize) -> Option<MemoryRegion> {
+        if index >= self.num_regions {
+            return None;
+        }
+
+        let start_addr = unsafe { MEMORY_REGIONS_START_ADDR.add(index * 2) };
+
+        Some(MemoryRegion {
+            start: unsafe { start_addr.read_volatile() },
+            end: unsafe { start_addr.add(1).read_volatile() },
+        })
+    }
+
+    fn add_unified(&mut self, region: MemoryRegion) -> Result<(), MemoryDetectionError> {
+        let start_addr = unsafe { MEMORY_REGIONS_START_ADDR.add(self.num_regions * 2) };
+
+        unsafe {
+            start_addr.write_volatile(region.start);
+            start_addr.add(1).write_volatile(region.end);
+        }
+
+        self.inc_num_regions()
+    }
+
+    fn constrain_usable(
+        &mut self,
+        entries: &SMAPEntries,
+        mut usable: MemoryRegion,
+    ) -> Result<(), MemoryDetectionError> {
+        if usable.start >= usable.end {
+            return Ok(());
+        }
+
+        for other in entries.sorted() {
+            if other.base <= usable.start
+                && other.end() >= usable.start
+                && other.entry_type != SMAPEntryType::Usable
+            {
+                usable.start = usable.start.max(other.end() + 1);
+            }
+        }
+
+        if usable.start >= usable.end {
+            return Ok(());
+        }
+
+        for other in entries.sorted() {
+            if other.base <= usable.end
+                && other.end() >= usable.end
+                && other.entry_type != SMAPEntryType::Usable
+            {
+                usable.end = usable.end.min(other.base - 1);
+            }
+        }
+
+        if usable.start >= usable.end {
+            return Ok(());
+        }
+
+        for other in entries.sorted() {
+            if other.base > usable.start
+                && other.end() < usable.end
+                && other.entry_type != SMAPEntryType::Usable
+            {
+                let first_region = MemoryRegion {
+                    start: usable.start,
+                    end: other.base - 1,
+                };
+
+                self.constrain_usable(entries, first_region)?;
+
+                let second_region = MemoryRegion {
+                    start: other.end(),
+                    end: usable.end,
+                };
+
+                self.constrain_usable(entries, second_region)?;
+
+                return Ok(());
+            }
+        }
+
+        if usable.start < usable.end {
+            self.add_unified(usable)?;
+        }
+
+        Ok(())
+    }
+
+    fn unify_regions(&mut self, smap_entries: SMAPEntries) -> Result<(), MemoryDetectionError> {
+        for entry in smap_entries.sorted() {
+            println!(
+                "Start: {:016x}, end: {:016x}, type: {:?}",
+                entry.base,
+                entry.end(),
+                entry.entry_type
+            );
+
+            if entry.entry_type == SMAPEntryType::Usable {
+                let usable = MemoryRegion {
+                    start: entry.base,
+                    end: entry.end(),
+                };
+
+                self.constrain_usable(&smap_entries, usable)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn num_regions(&self) -> usize {
+        self.num_regions
+    }
+}
+
+impl IntoIterator for MemoryRegionsDescriptor {
+    type Item = MemoryRegion;
+    type IntoIter = MemoryRegionsIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        MemoryRegionsIterator {
+            descriptor: self,
+            index: 0,
+        }
+    }
+}
+
+struct MemoryRegionsIterator {
+    descriptor: MemoryRegionsDescriptor,
+    index: usize,
+}
+
+impl Iterator for MemoryRegionsIterator {
+    type Item = MemoryRegion;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.descriptor.get_region(self.index)?;
+
+        self.index += 1;
+
+        Some(item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (
+            self.descriptor.num_regions(),
+            Some(self.descriptor.num_regions()),
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum MemoryDetectionError {
     TooManyRegionsError,
     BIOSError,
-}
-
-impl MemoryRegionsDescriptor {
-    fn add_region(&mut self, region: MemoryRegion) -> Result<(), MemoryDetectionError> {
-        if self.num_regions >= u8::MAX {
-            return Err(MemoryDetectionError::TooManyRegionsError);
-        }
-
-        unsafe {
-            let next_region = self.start.offset(self.num_regions as isize);
-
-            next_region.write(region);
-
-            self.num_regions += 1;
-        }
-
-        Ok(())
-    }
 }
 
 struct SMAPEntriesReader {
@@ -162,7 +315,6 @@ impl SMAPEntriesReader {
         self.bytes_read =
             unsafe { _BIOS_Memory_GetNextSegment(&mut buffer, &mut self.continuation_id) };
 
-        // Signals an error
         if self.bytes_read < 0 {
             Err(MemoryDetectionError::BIOSError)
         } else {
@@ -195,7 +347,7 @@ impl SMAPEntries {
 
     // This function will succeed as long as the place where the SMAPEntry's are being stored.
     // References must be aligned, and on 32 and 64 bit, SMAPEntry's will be aligned in memory.
-    unsafe fn get_entry(&self, index: usize) -> Option<&'static SMAPEntry> {
+    fn get_entry(&self, index: usize) -> Option<&'static SMAPEntry> {
         if index >= self.num_entries() {
             return None;
         }
@@ -217,13 +369,32 @@ impl SMAPEntries {
         Ok(entries)
     }
 
+    fn max_base_entry(&self) -> Option<SMAPEntry> {
+        self.into_iter().max_by_key(|e| e.base)
+    }
+
+    fn max_base_entry_index(&self) -> Option<usize> {
+        self.into_iter()
+            .enumerate()
+            .max_by_key(|(_, e)| e.base)
+            .map(|(i, _)| i)
+    }
+
+    fn sorted(&self) -> SortedSMAPEntriesIterator {
+        SortedSMAPEntriesIterator {
+            entries: *self,
+            visited: [false; 256],
+            addr: 0,
+        }
+    }
+
     fn num_entries(&self) -> usize {
         self.num_entries
     }
 }
 
 impl IntoIterator for SMAPEntries {
-    type Item = &'static SMAPEntry;
+    type Item = SMAPEntry;
     type IntoIter = SMAPEntriesIterator;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -234,32 +405,70 @@ impl IntoIterator for SMAPEntries {
     }
 }
 
+struct SortedSMAPEntriesIterator {
+    entries: SMAPEntries,
+    visited: [bool; 256],
+    addr: u64,
+}
+
+impl Iterator for SortedSMAPEntriesIterator {
+    type Item = SMAPEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut min_entry = self.entries.max_base_entry()?;
+        let mut min_entry_index = self.entries.max_base_entry_index()?;
+        let mut min_found = false;
+
+        if min_entry.base < self.addr {
+            return None;
+        }
+
+        for (i, entry) in self.entries.into_iter().enumerate() {
+            if !self.visited[i] && entry.base >= self.addr && entry.base <= min_entry.base {
+                min_entry = entry;
+                min_entry_index = i;
+                min_found = true;
+            }
+        }
+
+        if !min_found {
+            self.addr = min_entry.base + 1;
+            return self.next();
+        }
+
+        self.visited[min_entry_index] = true;
+
+        Some(min_entry)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.entries.num_entries(), Some(self.entries.num_entries()))
+    }
+}
+
 struct SMAPEntriesIterator {
     entries: SMAPEntries,
     next_entry: usize,
 }
 
 impl Iterator for SMAPEntriesIterator {
-    type Item = &'static SMAPEntry;
+    type Item = SMAPEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let entry = unsafe { self.entries.get_entry(self.next_entry) }?;
+        let entry = self.entries.get_entry(self.next_entry)?;
         self.next_entry += 1;
 
-        Some(entry)
+        Some(*entry)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.entries.num_entries(), Some(self.entries.num_entries()))
     }
 }
 
 pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
     // Initialize the global memory regions descriptor
-    let memory_regions_descriptor = unsafe {
-        MEMORY_REGIONS_DESCRIPTOR_ADDR.write(MemoryRegionsDescriptor {
-            num_regions: 0,
-            start: MEMORY_REGIONS_START_ADDR,
-        });
-
-        MEMORY_REGIONS_DESCRIPTOR_ADDR.as_mut().unwrap()
-    };
+    let mut memory_regions_descriptor = MemoryRegionsDescriptor::new();
 
     // Read the SMAP entries from the BIOS
     let mut smap_entries = SMAPEntries::read_from_bios()?;
@@ -269,7 +478,7 @@ pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
         base: KERNEL_EXECUTE_LOCATION,
         length: KERNEL_EXECUTE_SIZE,
         entry_type: SMAPEntryType::Reserved,
-        acpi: 0,
+        _acpi: 1,
     })?;
 
     // Also add the kernel stack, this could theoretically be separate, so we add
@@ -278,7 +487,7 @@ pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
         base: KERNEL_STACK_LOCATION,
         length: KERNEL_STACK_SIZE,
         entry_type: SMAPEntryType::Reserved,
-        acpi: 0,
+        _acpi: 1,
     })?;
 
     // Add where the page tables are created
@@ -286,16 +495,15 @@ pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
         base: PAGE_MAP_LEVEL_4_TABLE_START as u64,
         length: PAGE_TABLES_LENGTH,
         entry_type: SMAPEntryType::Reserved,
-        acpi: 0,
+        _acpi: 1,
     })?;
 
-    for entry in smap_entries {
-        println!(
-            "Start: {:016x}, end: {:016x}, type: {:?}",
-            entry.base,
-            (entry.base + entry.length) - 1,
-            entry.entry_type
-        );
+    memory_regions_descriptor.unify_regions(smap_entries)?;
+
+    println!("Num regions: {}", memory_regions_descriptor.num_regions());
+
+    for region in memory_regions_descriptor {
+        println!("{region}");
     }
 
     todo!();
