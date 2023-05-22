@@ -4,16 +4,15 @@ use crate::{
 };
 use core::panic::PanicInfo;
 
-const BOOT_DRIVE_NUMBER_PTR: *const u32 = 0x00070000 as *const u32;
-const NUM_SMAP_ENTRIES_PTR: *const u32 = 0x00070004 as *const u32;
-const START_SMAP_ENTRIES_PTR: *const RawMemoryRegion = 0x00070008 as *const RawMemoryRegion;
-const MAX_SMAP_ENTRIES: usize = 50;
+const BOOT_DRIVE_NUMBER_PTR: *const u8 = 0x7c24 as *const u8;
+const MEMORY_REGIONS_DESCRIPTOR_ADDR: *mut u8 = 0x1000 as *mut u8;
+const MEMORY_REGIONS_START_ADDR: *const u64 = 0x1010 as *const u64;
 
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
     crate::init();
 
-    let num_reported_memory_regions = *NUM_SMAP_ENTRIES_PTR;
+    let num_reported_memory_regions = *MEMORY_REGIONS_DESCRIPTOR_ADDR;
     let boot_drive = *BOOT_DRIVE_NUMBER_PTR;
 
     let mut num_memory_regions = 0;

@@ -7,22 +7,18 @@ use core::panic::PanicInfo;
 mod disk;
 mod elf;
 mod fat;
-mod gdt;
 mod long_mode;
 mod paging;
 mod printing;
 mod smap;
 
 use elf::load_elf;
-use gdt::GlobalDescriptorTable;
 
 use crate::disk::Disk;
 use crate::fat::{FATDriver, FileName};
 use crate::long_mode::{enter_long_mode, is_cpuid_available, is_extended_cpuid_available};
 use crate::paging::identity_map_mem;
 use crate::smap::detect_memory_regions;
-
-// static GDT: GlobalDescriptorTable = GlobalDescriptorTable::unreal();
 
 const DRIVE_NUM_PTR: *mut u8 = 0x7c24 as *mut u8;
 
@@ -41,7 +37,7 @@ pub extern "C" fn bootloader_entry() -> ! {
 
     println!("Hello from bootloader!");
 
-    let Ok(mut boot_disk) = Disk::from_drive(drive_number) else {
+    let Ok(boot_disk) = Disk::from_drive(drive_number) else {
         println!("Failed to read disk parameters.");
         halt();
     };
@@ -63,10 +59,7 @@ pub extern "C" fn bootloader_entry() -> ! {
     let file_name = match FileName::try_from(file_name_str) {
         Ok(file_name) => file_name,
         Err(e) => {
-            println!(
-                "Failed to convert file name {} into 8.3 format",
-                file_name_str
-            );
+            println!("Failed to convert file name {file_name_str} into 8.3 format: {e:?}",);
             halt();
         }
     };

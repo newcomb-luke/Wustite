@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::{print, println};
 
 const ELF_FILE_MAGIC: u32 = 0x464C457F;

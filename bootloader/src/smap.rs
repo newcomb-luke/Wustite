@@ -1,12 +1,9 @@
-use core::fmt::Display;
+use common::PAGE_MAP_LEVEL_4_TABLE_START;
 
-use crate::{
-    paging::{PAGE_MAP_LEVEL_4_TABLE_START, PAGE_TABLES_LENGTH},
-    println,
-};
+use crate::paging::PAGE_TABLES_LENGTH;
 
-const MEMORY_REGIONS_DESCRIPTOR_ADDR: *mut u8 = 0x500 as *mut u8;
-const MEMORY_REGIONS_START_ADDR: *mut u64 = 0x510 as *mut u64;
+const MEMORY_REGIONS_DESCRIPTOR_ADDR: *mut u8 = 0x1000 as *mut u8;
+const MEMORY_REGIONS_START_ADDR: *mut u64 = 0x1010 as *mut u64;
 
 const SMAP_ENTRIES_START: *mut SMAPEntry = 0x00010000 as *mut SMAPEntry;
 

@@ -2,10 +2,7 @@
 
 use core::mem::size_of;
 
-use crate::{
-    disk::{Disk, DiskReadError, SECTOR_SIZE},
-    println,
-};
+use crate::disk::{Disk, DiskReadError, SECTOR_SIZE};
 
 const FAT_DRIVER_BOOT_SECTOR_PTR: *mut u8 = 0x7c00 as *mut u8;
 
@@ -49,7 +46,7 @@ impl FATLabel {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum FileNameError {
     NameTooLongError,
     ExtensionTooLongError,
@@ -100,7 +97,7 @@ impl TryFrom<&str> for FileName {
 
                 name_buf[index] = c_uppercase;
             } else {
-                let mut ext_buf = &mut buf[8..];
+                let ext_buf = &mut buf[8..];
 
                 if index >= ext_buf.len() {
                     return Err(FileNameError::ExtensionTooLongError);
@@ -248,8 +245,7 @@ impl<'a> FATFile<'a> {
         let mut bytes_remaining = self.size_bytes.min(buffer.len() as u32);
 
         let mut current_cluster = self.start_cluster;
-        let mut previous_fat_sector = sector_of_fat(current_cluster);
-        let mut previous_fat_section = section_of_fat(previous_fat_sector);
+        let mut previous_fat_section = section_of_fat(sector_of_fat(current_cluster));
         let sectors_per_cluster = self.driver.boot_record.bdb_sectors_per_cluster as usize;
         let clusters_per_buffer = (FAT_DRIVER_FAT_BUFFER_SECTORS * SECTOR_SIZE as u16) / 12;
 
@@ -277,7 +273,6 @@ impl<'a> FATFile<'a> {
             if new_fat_section != previous_fat_section {
                 self.load_fat_section(new_fat_section)?;
 
-                previous_fat_sector = new_fat_sector;
                 previous_fat_section = new_fat_section;
             }
 
@@ -407,9 +402,6 @@ impl FATDriver {
 
         // Load the very beginning of the root directory
         self.load_root_directory(0)?;
-
-        let first_entry_ptr = FAT_DRIVER_ROOT_DIR_BUFFER_PTR as *const DirEntry;
-        let first_entry = unsafe { first_entry_ptr.as_ref().unwrap() };
 
         let mut local_index: isize = 0;
 

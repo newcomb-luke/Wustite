@@ -23,16 +23,16 @@ A custom toy operating system written mostly in the Rust programming language. T
       - [x] Root directory lookup
       - [x] FAT lookup
       - [x] Read arbitrary file into memory
-    - [ ] Minimal ELF executable loading
-    - [ ] Protected mode entry
-    - [ ] Long mode entry
-      - [ ] Enabling PAE
-      - [ ] Set 64-bit page table
-      - [ ] Set long mode enable bit
-      - [ ] Enable paging
-      - [ ] Set up 64-bit GDT
-    - [ ] BIOS memory map request
-    - [ ] Providing boot info to kernel
+    - [x] Minimal ELF executable loading
+    - [x] Protected mode entry
+    - [x] Long mode entry
+      - [x] Enabling PAE
+      - [x] Set 64-bit page table
+      - [x] Set long mode enable bit
+      - [x] Enable paging
+      - [x] Set up 64-bit GDT
+    - [x] BIOS memory map request
+    - [x] Providing boot info to kernel
 - [ ] Kernel
   - [x] Bare bones printing
     - [x] VGA text buffer support
