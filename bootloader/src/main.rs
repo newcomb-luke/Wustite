@@ -103,14 +103,18 @@ pub extern "C" fn bootloader_entry() -> ! {
         }
     };
 
-    identity_map_mem();
-
     // Just in case something happened to it
     unsafe { *DRIVE_NUM_PTR = drive_number };
 
-    if let Err(e) = detect_memory_regions() {
-        println!("Error detecting memory: {:?}", e);
-    }
+    let max_usable_addr = match detect_memory_regions() {
+        Ok(addr) => addr,
+        Err(e) => {
+            println!("Error detecting memory: {:?}", e);
+            halt();
+        }
+    };
+
+    identity_map_mem(max_usable_addr);
 
     enter_long_mode(entry_point);
 }

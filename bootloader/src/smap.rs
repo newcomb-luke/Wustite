@@ -1,6 +1,4 @@
-use common::PAGE_MAP_LEVEL_4_TABLE_START;
-
-use crate::paging::PAGE_TABLES_LENGTH;
+use common::{ALL_PAGE_TABLES_END_ADDR, PAGE_MAP_LEVEL_4_TABLE_START_ADDR, PAGE_SIZE};
 
 const MEMORY_REGIONS_DESCRIPTOR_ADDR: *mut u8 = 0x1000 as *mut u8;
 const MEMORY_REGIONS_START_ADDR: *mut u64 = 0x1010 as *mut u64;
@@ -110,6 +108,10 @@ impl MemoryRegionsDescriptor {
         }
     }
 
+    fn get_max_usable_addr(&self) -> u64 {
+        self.into_iter().last().map(|r| r.end).unwrap_or(0)
+    }
+
     fn get_region(&self, index: usize) -> Option<MemoryRegion> {
         if index >= self.num_regions {
             return None;
@@ -132,6 +134,24 @@ impl MemoryRegionsDescriptor {
         }
 
         self.inc_num_regions()
+    }
+
+    fn page_align(region: MemoryRegion) -> MemoryRegion {
+        const PAGE_SIZE_U64: u64 = PAGE_SIZE as u64;
+
+        let mut start = (region.start / PAGE_SIZE_U64) * PAGE_SIZE_U64;
+
+        if (region.start % PAGE_SIZE_U64) != 0 {
+            start += PAGE_SIZE_U64;
+        }
+
+        let mut end = (region.end / PAGE_SIZE_U64) * PAGE_SIZE_U64;
+
+        if (region.end % PAGE_SIZE_U64) != 0 {
+            end -= PAGE_SIZE_U64;
+        }
+
+        MemoryRegion { start, end }
     }
 
     fn constrain_usable(
@@ -193,7 +213,11 @@ impl MemoryRegionsDescriptor {
         }
 
         if usable.start < usable.end {
-            self.add_unified(usable)?;
+            let aligned = Self::page_align(usable);
+
+            if aligned.start < aligned.end {
+                self.add_unified(aligned)?;
+            }
         }
 
         Ok(())
@@ -445,7 +469,7 @@ impl Iterator for SMAPEntriesIterator {
     }
 }
 
-pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
+pub fn detect_memory_regions() -> Result<u64, MemoryDetectionError> {
     // Initialize the global memory regions descriptor
     let mut memory_regions_descriptor = MemoryRegionsDescriptor::new();
 
@@ -471,13 +495,13 @@ pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
 
     // Add where the page tables are created
     smap_entries.add_entry(SMAPEntry {
-        base: PAGE_MAP_LEVEL_4_TABLE_START as u64,
-        length: PAGE_TABLES_LENGTH,
+        base: PAGE_MAP_LEVEL_4_TABLE_START_ADDR,
+        length: ALL_PAGE_TABLES_END_ADDR - PAGE_MAP_LEVEL_4_TABLE_START_ADDR,
         entry_type: SMAPEntryType::Reserved,
         _acpi: 1,
     })?;
 
     memory_regions_descriptor.unify_regions(smap_entries)?;
 
-    Ok(())
+    Ok(memory_regions_descriptor.get_max_usable_addr())
 }
