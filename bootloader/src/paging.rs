@@ -1,5 +1,7 @@
 use core::ops::{Index, IndexMut};
 
+use crate::println;
+
 const PAGE_TABLE_SIZE: usize = 0x1000;
 pub const PAGE_MAP_LEVEL_4_TABLE_START: *mut u8 = 0x00400000 as *mut u8;
 const PAGE_DIRECTORY_POINTER_TABLE_START: *mut u8 = 0x00401000 as *mut u8;
@@ -10,9 +12,9 @@ const NUM_ENTRIES_PER_TABLE: usize = 512;
 const PAGE_SIZE: usize = 4096;
 pub const PAGE_TABLES_LENGTH: u64 = (PAGE_TABLE_SIZE * (NUM_PAGE_TABLES + 3)) as u64;
 
-#[repr(C, packed)]
+#[repr(transparent)]
 struct PageTableEntry {
-    value: u32,
+    value: u64,
 }
 
 impl PageTableEntry {
@@ -25,11 +27,11 @@ impl PageTableEntry {
     }
 
     fn set_address(&mut self, addr: *mut u8) {
-        self.value |= addr as u32
+        self.value |= addr as u64
     }
 }
 
-#[repr(C, packed)]
+#[repr(transparent)]
 struct PageTable {
     entries: [PageTableEntry; NUM_ENTRIES_PER_TABLE],
 }
@@ -67,20 +69,16 @@ pub fn identity_map_mem() {
 
     // Zero the PDT
     unsafe { PAGE_DIRECTORY_TABLE_START.write_bytes(0, PAGE_TABLE_SIZE) };
-
-    // Zero each of the regular page tables
-    for i in 0..NUM_PAGE_TABLES {
-        unsafe {
-            PAGE_TABLES_START
-                .offset((PAGE_TABLE_SIZE * i) as isize)
-                .write_bytes(0, PAGE_TABLE_SIZE);
-        }
-    }
     let pdt = unsafe {
         (PAGE_DIRECTORY_TABLE_START as *mut PageTable)
             .as_mut()
             .unwrap_unchecked()
     };
+
+    // Zero each of the regular page tables
+    unsafe {
+        PAGE_TABLES_START.write_bytes(0, PAGE_TABLE_SIZE * NUM_PAGE_TABLES);
+    }
 
     // Set up the first entry of the PML4T, only one entry is all we will need
     // This stores a "pointer" to the page directory pointer table, and sets the entry
@@ -111,7 +109,7 @@ pub fn identity_map_mem() {
         // We will start at address 0, and work up by increments of the page size. We
         // use the default size of 4KiB pages.
         let table = unsafe {
-            (PAGE_TABLES_START.offset((PAGE_TABLE_SIZE * i) as isize) as *mut PageTable)
+            (PAGE_TABLES_START.add(PAGE_TABLE_SIZE * i) as *mut PageTable)
                 .as_mut()
                 .unwrap_unchecked()
         };
@@ -120,7 +118,9 @@ pub fn identity_map_mem() {
             let entry = &mut table[entry_idx];
             let addr = ((i * NUM_ENTRIES_PER_TABLE + entry_idx) * PAGE_SIZE) as *mut u8;
 
-            entry.set_present();
+            if !(i == 0 && entry_idx == 0) {
+                entry.set_present();
+            }
             entry.set_writable();
             entry.set_address(addr);
         }

@@ -23,8 +23,10 @@ bootloader: $(BUILD_DIR)/bootloader.bin
 $(BUILD_DIR)/bootloader.bin: always FORCE
 	nasm -f elf bootloader/src/entry.asm -o target/i686-none-eabi/entry.o
 	nasm -f elf bootloader/src/bios.asm -o target/i686-none-eabi/bios.o
+	nasm -f elf bootloader/src/long_mode.asm -o target/i686-none-eabi/longmode.o
 	ar rcs bootloader/libentry.a target/i686-none-eabi/entry.o
 	ar rcs bootloader/libbios.a target/i686-none-eabi/bios.o
+	ar rcs bootloader/liblongmode.a target/i686-none-eabi/longmode.o
 	cargo build --release -Z build-std=core --target=i686-none-eabi.json --package=bootloader
 	objcopy -I elf32-i386 -O binary target/i686-none-eabi/release/bootloader $(BUILD_DIR)/bootloader.bin
 

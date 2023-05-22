@@ -1,5 +1,22 @@
 use core::arch::asm;
 
+#[link(name = "longmode")]
+extern "cdecl" {
+    fn long_mode_jump(entry_point: u32);
+}
+
+pub fn enter_long_mode(entry_point: u64) -> ! {
+    unsafe {
+        long_mode_jump(entry_point as u32);
+    }
+
+    loop {
+        unsafe {
+            asm!("cli");
+        }
+    }
+}
+
 pub fn is_cpuid_available() -> bool {
     let value: u32;
 

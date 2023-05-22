@@ -18,7 +18,7 @@ use gdt::GlobalDescriptorTable;
 
 use crate::disk::Disk;
 use crate::fat::{FATDriver, FileName};
-use crate::long_mode::{is_cpuid_available, is_extended_cpuid_available};
+use crate::long_mode::{enter_long_mode, is_cpuid_available, is_extended_cpuid_available};
 use crate::paging::identity_map_mem;
 use crate::smap::detect_memory_regions;
 
@@ -119,7 +119,7 @@ pub extern "C" fn bootloader_entry() -> ! {
         println!("Error detecting memory: {:?}", e);
     }
 
-    halt();
+    enter_long_mode(entry_point);
 }
 
 fn halt() -> ! {
