@@ -57,15 +57,6 @@ impl SMAPEntry {
     }
 }
 
-impl Display for SMAPEntry {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_fmt(format_args!(
-            "Entry base: 0x{:016x}, size: 0x{:016x}, type: {:?}",
-            self.base, self.length, self.entry_type
-        ))
-    }
-}
-
 impl From<[u8; 24]> for SMAPEntry {
     fn from(value: [u8; 24]) -> Self {
         let mut base_bytes: [u8; 8] = [0; 8];
@@ -98,15 +89,6 @@ impl From<[u8; 24]> for SMAPEntry {
 struct MemoryRegion {
     pub start: u64,
     pub end: u64,
-}
-
-impl Display for MemoryRegion {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_fmt(format_args!(
-            "Start: {:016x}, end: {:016x}",
-            self.start, self.end
-        ))
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -222,12 +204,12 @@ impl MemoryRegionsDescriptor {
 
     fn unify_regions(&mut self, smap_entries: SMAPEntries) -> Result<(), MemoryDetectionError> {
         for entry in smap_entries.sorted() {
-            println!(
-                "Start: {:016x}, end: {:016x}, type: {:?}",
-                entry.base,
-                entry.end(),
-                entry.entry_type
-            );
+            // println!(
+            //     "Start: {:016x}, end: {:016x}, type: {:?}",
+            //     entry.base,
+            //     entry.end(),
+            //     entry.entry_type
+            // );
 
             if entry.entry_type == SMAPEntryType::Usable {
                 let usable = MemoryRegion {
@@ -500,11 +482,5 @@ pub fn detect_memory_regions() -> Result<(), MemoryDetectionError> {
 
     memory_regions_descriptor.unify_regions(smap_entries)?;
 
-    println!("Num regions: {}", memory_regions_descriptor.num_regions());
-
-    for region in memory_regions_descriptor {
-        println!("{region}");
-    }
-
-    todo!();
+    Ok(())
 }

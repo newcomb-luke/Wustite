@@ -22,7 +22,7 @@ use crate::long_mode::{is_cpuid_available, is_extended_cpuid_available};
 use crate::paging::identity_map_mem;
 use crate::smap::detect_memory_regions;
 
-static GDT: GlobalDescriptorTable = GlobalDescriptorTable::unreal();
+// static GDT: GlobalDescriptorTable = GlobalDescriptorTable::unreal();
 
 const DRIVE_NUM_PTR: *mut u8 = 0x7c24 as *mut u8;
 
@@ -46,7 +46,7 @@ pub extern "C" fn bootloader_entry() -> ! {
         halt();
     };
 
-    println!("Read disk parameters");
+    // println!("Read disk parameters");
 
     let mut fat_driver = match FATDriver::new(boot_disk) {
         Ok(fat_driver) => fat_driver,
@@ -56,7 +56,7 @@ pub extern "C" fn bootloader_entry() -> ! {
         }
     };
 
-    println!("Initialized FAT driver");
+    // println!("Initialized FAT driver");
 
     let file_name_str = "kernel.o";
 
@@ -79,8 +79,6 @@ pub extern "C" fn bootloader_entry() -> ! {
         }
     };
 
-    println!("Opened file");
-
     let kernel_read_location =
         unsafe { core::slice::from_raw_parts_mut(KERNEL_READ_LOCATION, KERNEL_READ_LOCATION_SIZE) };
 
@@ -95,8 +93,6 @@ pub extern "C" fn bootloader_entry() -> ! {
             halt();
         }
     };
-
-    println!("Read file");
 
     if bytes_read > KERNEL_MAXIUMUM_SIZE {
         println!("Kernel size exceeds maximum available.");

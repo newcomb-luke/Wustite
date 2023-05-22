@@ -75,16 +75,6 @@ struct GDTDescriptor {
 }
 
 impl GlobalDescriptorTable {
-    pub const fn unreal() -> Self {
-        let descriptors = [
-            Descriptor::null(),
-            Descriptor::code(0, 0xffff, 0),
-            Descriptor::data(0, 0xffffff, BITS_32 | GRANULARITY_4KB),
-        ];
-
-        Self { descriptors }
-    }
-
     pub fn load(&self) {
         let descriptor = GDTDescriptor {
             size: (3 * 64) - 1,

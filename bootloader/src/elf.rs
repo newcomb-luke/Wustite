@@ -325,7 +325,7 @@ pub fn validate_elf(bytes: *const u8) -> Result<(), ElfReadError> {
         return Err(ElfReadError::NotExecutableFileError);
     }
 
-    header.print_program_header_table(bytes);
+    // header.print_program_header_table(bytes);
 
     Ok(())
 }

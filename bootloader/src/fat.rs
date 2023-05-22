@@ -1,6 +1,11 @@
+#![allow(dead_code)]
+
 use core::mem::size_of;
 
-use crate::disk::{Disk, DiskReadError, SECTOR_SIZE};
+use crate::{
+    disk::{Disk, DiskReadError, SECTOR_SIZE},
+    println,
+};
 
 const FAT_DRIVER_BOOT_SECTOR_PTR: *mut u8 = 0x7c00 as *mut u8;
 
@@ -87,7 +92,7 @@ impl TryFrom<&str> for FileName {
             let c_uppercase = if c < 97 { c } else { c - 32 };
 
             if !got_name {
-                let mut name_buf = &mut buf[0..8];
+                let name_buf = &mut buf[0..8];
 
                 if index >= name_buf.len() {
                     return Err(FileNameError::NameTooLongError);

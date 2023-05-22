@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use crate::println;
+
 const DISK_DRIVER_READ_BUFFER: *mut u8 = 0x00007E00 as *mut u8;
 pub const SECTOR_SIZE: usize = 512;
 
@@ -154,17 +156,19 @@ impl Disk {
             )
         };
 
-        if success != 0 {
-            return Err(());
-        }
+        println!("head: {max_head}, cylinder: {max_cylinder}, sector: {max_sector}");
 
-        Ok(Disk {
-            drive_number,
-            drive_type,
-            max_head,
-            max_cylinder,
-            max_sector,
-        })
+        if success != 0 {
+            Err(())
+        } else {
+            Ok(Disk {
+                drive_number,
+                drive_type,
+                max_head,
+                max_cylinder,
+                max_sector,
+            })
+        }
     }
 
     /// Converts a LBA sector address to a CHS address
