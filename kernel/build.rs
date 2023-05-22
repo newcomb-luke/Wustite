@@ -9,6 +9,6 @@ fn main() {
     );
     println!(
         "cargo:rustc-link-arg=-Map={}",
-        local_path.join("bootloader.map").display()
+        local_path.join("kernel.map").display()
     );
 }

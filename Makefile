@@ -50,7 +50,7 @@ $(BUILD_DIR)/boot_floppy.img: boot_sector bootloader kernel
 kernel: $(BUILD_DIR)/kernel.o
 
 $(BUILD_DIR)/kernel.o: always FORCE
-	RUSTFLAGS="-C code-model=kernel -C relocation-model=static" cargo build --release -Z build-std=core --target=x86_64-none-eabi.json --package=kernel
+	RUSTFLAGS="-C code-model=kernel -C relocation-model=static" cargo build --release -Z build-std=core,alloc --target=x86_64-none-eabi.json --package=kernel
 	cp target/x86_64-none-eabi/release/kernel $(BUILD_DIR)/kernel.o
 
 FORCE: ;

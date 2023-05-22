@@ -2,6 +2,9 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 
+extern crate alloc;
+
+mod allocator;
 mod arch;
 mod drivers;
 mod entry;
@@ -9,13 +12,10 @@ mod gdt;
 mod interrupts;
 mod memory;
 mod std;
-use common::PHYS_PAGE_DIRECTORY_POINTER_TABLE_START_ADDR;
-use x86_64::{
-    structures::paging::{Page, PageTable, Translate},
-    VirtAddr,
-};
+use alloc::boxed::Box;
+use x86_64::VirtAddr;
 
-use crate::{entry::BootInfo, memory::active_level_4_table};
+use crate::entry::BootInfo;
 
 fn init() {
     crate::gdt::init();
@@ -33,13 +33,12 @@ fn main(boot_info: &BootInfo) {
     let mut frame_allocator =
         unsafe { memory::BootInfoFrameAllocator::init(boot_info.memory_regions) };
 
-    // map an unused page
-    let page = Page::containing_address(VirtAddr::new(0xdeadbeef));
-    memory::create_example_mapping(page, &mut mapper, &mut frame_allocator);
+    allocator::init_heap(&mut mapper, &mut frame_allocator)
+        .expect("Kernel heap initialization failed");
 
-    // write the string `New!` to the screen through the new mapping
-    let page_ptr: *mut u64 = page.start_address().as_mut_ptr();
-    unsafe { page_ptr.offset(400).write_volatile(0x_f021_f077_f065_f04e) };
+    let heap_value = Box::new(42);
+
+    kprintln!("Heap value at {:p} = {}", heap_value, heap_value);
 
     kprintln!("Didn't crash.");
 }
