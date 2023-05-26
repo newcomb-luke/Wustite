@@ -26,8 +26,8 @@ impl PageTableEntry {
         self.value |= WRITABLE
     }
 
-    fn set_address(&mut self, addr: *mut u64) {
-        self.value |= addr as u64
+    fn set_address(&mut self, addr: u64) {
+        self.value |= addr
     }
 
     fn set_page_size(&mut self) {
@@ -107,30 +107,32 @@ pub fn identity_map_mem(max_usable_addr: u64) {
     // as present and writable
     pml4t_first.set_present();
     pml4t_first.set_writable();
-    pml4t_first.set_address(PAGE_DIRECTORY_POINTER_TABLE_START);
+    pml4t_first.set_address(PAGE_DIRECTORY_POINTER_TABLE_START as u64);
 
     // Set up the 3rd entry of the PML4T, which maps virtual memory from
     // PHYS_MAP_VIRTUAL_OFFSET to all of physical memory by pointing to
     // phys_pdpt
     pml4t_phys.set_present();
     pml4t_phys.set_writable();
-    pml4t_phys.set_address(PHYS_PAGE_DIRECTORY_POINTER_TABLE_START);
+    pml4t_phys.set_address(PHYS_PAGE_DIRECTORY_POINTER_TABLE_START as u64);
 
     // Set up the first entry of the PDPT, only one entry is all we need
     // Same value as above for the same reasons
     pdpt_first.set_present();
     pdpt_first.set_writable();
-    pdpt_first.set_address(PAGE_DIRECTORY_TABLE_START);
+    pdpt_first.set_address(PAGE_DIRECTORY_TABLE_START as u64);
 
     // Set up the physical PDPT, this will use HUGE (4 GiB) pages to map
     // virtual memory from PHYS_MAP_VIRTUAL_OFFSET to all of physical memory
     for i in 0..NUM_ENTRIES_PER_TABLE {
+        const GIGABYTE: u64 = 0x40000000;
+
         let entry = &mut phys_pdpt[i];
 
         entry.set_present();
         entry.set_writable();
         entry.set_page_size();
-        entry.set_address(core::ptr::null_mut());
+        entry.set_address(GIGABYTE * i as u64);
     }
 
     // Here is where it gets a little fun. We need as many entries as NUM_PAGE_TABLES.
@@ -143,7 +145,7 @@ pub fn identity_map_mem(max_usable_addr: u64) {
 
         entry.set_present();
         entry.set_writable();
-        entry.set_address(unsafe { PAGE_TABLES_START.add(PAGE_TABLE_SIZE * i) });
+        entry.set_address(unsafe { PAGE_TABLES_START.add(PAGE_TABLE_SIZE * i) } as u64);
 
         // Now we need to actually set up our page tables
         // We will start at address 0, and work up by increments of the page size. We
@@ -156,7 +158,7 @@ pub fn identity_map_mem(max_usable_addr: u64) {
 
         for entry_idx in 0..NUM_ENTRIES_PER_TABLE {
             let entry = &mut table[entry_idx];
-            let addr = ((i * NUM_ENTRIES_PER_TABLE + entry_idx) * PAGE_SIZE) as *mut u64;
+            let addr = ((i * NUM_ENTRIES_PER_TABLE + entry_idx) * PAGE_SIZE) as u64;
 
             if !(i == 0 && entry_idx == 0) {
                 entry.set_present();
