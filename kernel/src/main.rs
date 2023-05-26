@@ -30,7 +30,7 @@ fn init() {
 }
 
 fn main(boot_info: &BootInfo) {
-    kprintln!("Hello!");
+    kprintln!("Wustite version {}.\n", env!("CARGO_PKG_VERSION"));
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
