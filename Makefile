@@ -69,7 +69,7 @@ clean:
 	rm -rf build
 
 run: $(BUILD_DIR)/boot_floppy.img
-	qemu-system-x86_64 -m 2G -fda $(BUILD_DIR)/boot_floppy.img
+	qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on -m 2G -fda $(BUILD_DIR)/boot_floppy.img
 
 debug: $(BUILD_DIR)/boot_floppy.img
 	bochs -f bochs.cfg -q
