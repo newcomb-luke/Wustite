@@ -16,7 +16,7 @@ bdb_reserved_sectors: 		dw 1
 bdb_fat_count:			    db 2
 bdb_dir_entries_count:		dw 0xe0
 bdb_total_sectors:		    dw 2880 			; 1.44 MB
-bdb_media_descriptor_type: 	db 0xf0 			; 3.5 inch floppy disk
+bdb_media_descriptor_type: 	db 0xf0 			; Fixed disk
 bdb_sectors_per_fat: 		dw 9
 bdb_sectors_per_track: 		dw 18
 bdb_head_count:			    dw 2
@@ -24,7 +24,7 @@ bdb_hidden_sectors: 		dd 0
 bdb_large_sectors:		    dd 0
 
 ; Extended Boot Record
-ebr_drive_number: 		    db 0x00 			; 0x00 floppy, 0x80 hdd
+ebr_drive_number: 		    db 0x80 			; 0x00 floppy, 0x80 hdd
 				            db 0    			; Reserved
 ebr_signature: 			    db 0x29
 ebr_volume_id:			    db 0x12, 0x34, 0x56, 0x78

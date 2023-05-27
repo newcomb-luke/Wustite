@@ -1,6 +1,6 @@
-.PHONY: all floppy_image boot_sector bootloader clean always kernel
+.PHONY: all disk_image boot_sector bootloader clean always kernel
 
-all: boot_components floppy_image kernel
+all: boot_components disk_image kernel
 
 TARGET_ASM=nasm
 
@@ -31,18 +31,18 @@ $(BUILD_DIR)/bootloader.bin: always FORCE
 	objcopy -I elf32-i386 -O binary target/i686-none-eabi/release/bootloader $(BUILD_DIR)/bootloader.bin
 
 #
-# Floppy image
+# Disk image
 #
 
-floppy_image: $(BUILD_DIR)/boot_floppy.img
+disk_image: $(BUILD_DIR)/boot_disk.img
 
-$(BUILD_DIR)/boot_floppy.img: boot_sector bootloader kernel
-	dd if=/dev/zero of=$(BUILD_DIR)/boot_floppy.img bs=512 count=2880
-	mkfs.fat -F 12 -n "WUSTITE1" $(BUILD_DIR)/boot_floppy.img
-	dd if=$(BUILD_DIR)/boot-sector.bin of=$(BUILD_DIR)/boot_floppy.img conv=notrunc
-	mcopy -i $(BUILD_DIR)/boot_floppy.img $(BUILD_DIR)/kernel.o "::kernel.o"
-	mcopy -i $(BUILD_DIR)/boot_floppy.img test.txt "::test.txt"
-	mcopy -i $(BUILD_DIR)/boot_floppy.img $(BUILD_DIR)/bootloader.bin "::boot.bin"
+$(BUILD_DIR)/boot_disk.img: boot_sector bootloader kernel
+	dd if=/dev/zero of=$(BUILD_DIR)/boot_disk.img bs=512 count=2880
+	mkfs.fat -F 12 -n "WUSTITE1" $(BUILD_DIR)/boot_disk.img
+	dd if=$(BUILD_DIR)/boot-sector.bin of=$(BUILD_DIR)/boot_disk.img conv=notrunc
+	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/kernel.o "::kernel.o"
+	mcopy -i $(BUILD_DIR)/boot_disk.img test.txt "::test.txt"
+	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/bootloader.bin "::boot.bin"
 
 # 
 # Kernel
@@ -69,7 +69,7 @@ clean:
 	rm -rf build
 
 run: $(BUILD_DIR)/boot_floppy.img
-	qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on -m 2G -fda $(BUILD_DIR)/boot_floppy.img
+	qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on -m 2G -drive if=ide,format=raw,file=$(BUILD_DIR)/boot_disk.img
 
 debug: $(BUILD_DIR)/boot_floppy.img
 	bochs -f bochs.cfg -q
