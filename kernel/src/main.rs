@@ -15,7 +15,10 @@ mod memory;
 mod std;
 use x86_64::VirtAddr;
 
-use crate::{drivers::ata::available_drives, entry::BootInfo};
+use crate::{
+    drivers::{ata::available_drives, pci::check_pci_device_exists},
+    entry::BootInfo,
+};
 
 fn init() {
     crate::gdt::init();
@@ -41,6 +44,15 @@ fn main(boot_info: &BootInfo) {
     let available_drives = available_drives();
 
     kprintln!("{:#?}", available_drives);
+
+    for bus in 0..1 {
+        for device in 0..8 {
+            if let Some(header) = check_pci_device_exists(bus, device) {
+                kprintln!("Bus {bus}, device {device}:");
+                header.print_summary();
+            }
+        }
+    }
 
     kprintln!("Didn't crash.");
 }
