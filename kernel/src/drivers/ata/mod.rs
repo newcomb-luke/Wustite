@@ -1,8 +1,10 @@
-use core::arch::asm;
-
+use alloc::vec::Vec;
 use spin::Mutex;
 
-use crate::kprintln;
+use crate::{
+    drivers::{read_io_port_u8, write_io_port_u8},
+    kprintln,
+};
 
 const PRIMARY_IO_BASE: u16 = 0x1F0;
 const PRIMARY_CONTROL_BASE: u16 = 0x3F6;
@@ -12,52 +14,42 @@ const SECONDARY_CONTROL_BASE: u16 = 0x376;
 pub static PRIMARY_BUS: Bus = Bus::new(PRIMARY_IO_BASE, PRIMARY_CONTROL_BASE);
 pub static SECONDARY_BUS: Bus = Bus::new(SECONDARY_IO_BASE, SECONDARY_CONTROL_BASE);
 
-unsafe fn write_io_port_u8(port: u16, data: u8) {
-    asm!(
-        "mov dx, {:x}",
-        "mov al, {}",
-        "out dx, al",
-        in(reg) port,
-        in(reg_byte) data
-    );
+pub fn available_drives() -> Vec<AvailableDrive> {
+    let mut available = Vec::new();
+
+    if let Some(drive) = query_drive(DriveBus::Primary, Drive::Master) {
+        available.push(drive);
+    }
+
+    if let Some(drive) = query_drive(DriveBus::Primary, Drive::Slave) {
+        available.push(drive);
+    }
+
+    if let Some(drive) = query_drive(DriveBus::Secondary, Drive::Master) {
+        available.push(drive);
+    }
+
+    if let Some(drive) = query_drive(DriveBus::Secondary, Drive::Slave) {
+        available.push(drive);
+    }
+
+    available
 }
 
-unsafe fn read_io_port_u8(port: u16) -> u8 {
-    let data: u8;
+fn query_drive(bus: DriveBus, drive: Drive) -> Option<AvailableDrive> {
+    let drive_type = if bus == DriveBus::Primary {
+        PRIMARY_BUS.disable_interrupts(drive);
+        PRIMARY_BUS.identify(drive)
+    } else {
+        SECONDARY_BUS.disable_interrupts(drive);
+        SECONDARY_BUS.identify(drive)
+    }?;
 
-    asm!(
-        "mov dx, {:x}",
-        "in al, dx",
-        "mov {}, al",
-        in(reg) port,
-        lateout(reg_byte) data,
-    );
-
-    data
-}
-
-unsafe fn write_io_port_u16(port: u16, data: u16) {
-    asm!(
-        "mov dx, {:x}",
-        "mov ax, {:x}",
-        "out dx, ax",
-        in(reg) port,
-        in(reg) data
-    );
-}
-
-unsafe fn read_io_port_u16(port: u16) -> u16 {
-    let data: u16;
-
-    asm!(
-        "mov dx, {:x}",
-        "in ax, dx",
-        "mov {:x}, ax",
-        in(reg) port,
-        lateout(reg) data,
-    );
-
-    data
+    Some(AvailableDrive {
+        bus,
+        drive,
+        drive_type,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +89,19 @@ impl From<u8> for Status {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriveBus {
+    Primary,
+    Secondary,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AvailableDrive {
+    bus: DriveBus,
+    drive: Drive,
+    drive_type: DriveType,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriveType {
     ATA,
     ATAPI,
@@ -104,7 +109,7 @@ pub enum DriveType {
     Unknown,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Drive {
     Master,
     Slave,
@@ -194,6 +199,12 @@ impl BusInner {
         const COMMAND_REGISTER_OFFSET: u16 = 7;
         write_io_port_u8(self.io_port_base + COMMAND_REGISTER_OFFSET, value);
     }
+
+    fn delay_400ns(&mut self) {
+        for _ in 0..20 {
+            unsafe { self.read_alternate_status() };
+        }
+    }
 }
 
 impl Bus {
@@ -215,11 +226,9 @@ impl Bus {
 
             unsafe {
                 bus.write_control_register(0b00000010);
-
-                for _ in 0..16 {
-                    bus.read_alternate_status();
-                }
             }
+
+            bus.delay_400ns();
         }
     }
 
@@ -235,6 +244,8 @@ impl Bus {
                 bus.write_lba_mid(0);
                 bus.write_lba_hi(0);
             }
+
+            bus.delay_400ns();
         }
 
         self.send_command(BusCommand::Identify);
@@ -242,9 +253,7 @@ impl Bus {
         unsafe {
             let mut bus = self.inner.lock();
 
-            for _ in 0..16 {
-                bus.read_alternate_status();
-            }
+            bus.delay_400ns();
 
             if bus.read_alternate_status() == 0 {
                 return None;
@@ -280,6 +289,7 @@ impl Bus {
         }
     }
 
+    #[inline(never)]
     fn send_command(&self, command: BusCommand) {
         let byte = match command {
             BusCommand::Identify => 0xEC,
@@ -291,6 +301,8 @@ impl Bus {
             unsafe {
                 bus.write_command_register(byte);
             }
+
+            bus.delay_400ns();
         }
     }
 
@@ -307,17 +319,15 @@ impl Bus {
 
         if !same {
             unsafe {
+                bus.selected_drive = Some(drive);
+
                 if drive == Drive::Master {
                     bus.write_drive_head(0xA0);
                 } else {
                     bus.write_drive_head(0xB0);
                 }
 
-                for _ in 0..16 {
-                    bus.read_alternate_status();
-                }
-
-                bus.selected_drive = Some(drive);
+                bus.delay_400ns();
             }
         }
     }

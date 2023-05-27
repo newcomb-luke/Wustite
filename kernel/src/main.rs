@@ -7,6 +7,7 @@ extern crate alloc;
 mod acpi;
 mod allocator;
 mod arch;
+mod cmos;
 mod drivers;
 mod entry;
 mod gdt;
@@ -18,7 +19,8 @@ use x86_64::VirtAddr;
 
 use crate::{
     acpi::ACPIReader,
-    drivers::ata::{Drive, PRIMARY_BUS, SECONDARY_BUS},
+    cmos::CMOS,
+    drivers::ata::{available_drives, Drive, PRIMARY_BUS, SECONDARY_BUS},
     entry::BootInfo,
 };
 
@@ -43,10 +45,9 @@ fn main(boot_info: &BootInfo) {
 
     let acpi_reader = ACPIReader::read(phys_mem_offset).expect("ACPI not found, cannot continue");
 
-    // SECONDARY_BUS.disable_interrupts(Drive::Master);
-    // let status = SECONDARY_BUS.identify(Drive::Master);
+    let available_drives = available_drives();
 
-    // kprintln!("Secondary master status: {:#?}", status);
+    kprintln!("{:#?}", available_drives);
 
     kprintln!("Didn't crash.");
 }
