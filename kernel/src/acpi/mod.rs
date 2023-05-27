@@ -1,7 +1,6 @@
-use alloc::vec::Vec;
-use x86_64::VirtAddr;
+#![allow(dead_code)]
 
-use crate::{kprint, kprintln};
+use x86_64::VirtAddr;
 
 const EBDA_START: usize = 0x00080000;
 const EBDA_END: usize = 0x0009FFFF;
@@ -199,18 +198,16 @@ impl ACPIRsdt {
 
         let header = ACPISDTHeader::parse(rsdt_ptr);
 
-        unsafe {
-            if RSDT_SIGNATURE != header.signature()
-                || !validate_checksum_ptr(rsdt_ptr, header.length as usize)
-            {
-                return None;
-            }
-
-            Some(Self {
-                rsdt_address: address,
-                header,
-            })
+        if RSDT_SIGNATURE != header.signature()
+            || !validate_checksum_ptr(rsdt_ptr, header.length as usize)
+        {
+            return None;
         }
+
+        Some(Self {
+            rsdt_address: address,
+            header,
+        })
     }
 
     fn find_table(&self, physical_memory_offset: VirtAddr, table: ACPISDT) -> Option<u32> {

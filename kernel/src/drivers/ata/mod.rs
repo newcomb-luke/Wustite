@@ -1,10 +1,7 @@
 use alloc::vec::Vec;
 use spin::Mutex;
 
-use crate::{
-    drivers::{read_io_port_u8, write_io_port_u8},
-    kprintln,
-};
+use crate::drivers::{read_io_port_u8, write_io_port_u8};
 
 const PRIMARY_IO_BASE: u16 = 0x1F0;
 const PRIMARY_CONTROL_BASE: u16 = 0x3F6;
@@ -289,7 +286,6 @@ impl Bus {
         }
     }
 
-    #[inline(never)]
     fn send_command(&self, command: BusCommand) {
         let byte = match command {
             BusCommand::Identify => 0xEC,
@@ -306,7 +302,6 @@ impl Bus {
         }
     }
 
-    #[inline(never)]
     fn select_drive(&self, drive: Drive) {
         let mut bus = self.inner.lock();
 

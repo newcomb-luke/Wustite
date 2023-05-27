@@ -2,7 +2,8 @@ use core::fmt::{Result, Write};
 
 use lazy_static::lazy_static;
 use spin::Mutex;
-use x86_64::instructions::port::Port;
+
+use crate::drivers::write_io_port_u8;
 
 const VIDEO_MEMORY: *mut u16 = 0xB8000 as *mut u16;
 const NUM_COLUMNS: usize = 80;
@@ -44,7 +45,6 @@ macro_rules! keprintln {
 #[doc(hidden)]
 pub fn _kprint(args: core::fmt::Arguments) {
     x86_64::instructions::interrupts::without_interrupts(|| {
-        // new
         TEXT_BUFFER.lock().write_fmt(args).unwrap();
     });
 }
@@ -52,7 +52,6 @@ pub fn _kprint(args: core::fmt::Arguments) {
 #[doc(hidden)]
 pub fn _keprint(args: core::fmt::Arguments) {
     x86_64::instructions::interrupts::without_interrupts(|| {
-        // new
         let mut buffer = TEXT_BUFFER.lock();
 
         buffer.set_fg(ERROR_FG);
@@ -91,10 +90,11 @@ impl VGARegister {
     }
 
     pub unsafe fn write(&self, value: u8) {
-        let mut VGA_ADDR_PORT: Port<u8> = Port::new(0x03D4);
-        let mut VGA_DATA_PORT: Port<u8> = Port::new(0x03D5);
-        VGA_ADDR_PORT.write(self.0);
-        VGA_DATA_PORT.write(value);
+        const VGA_ADDR_PORT: u16 = 0x03D4;
+        const VGA_DATA_PORT: u16 = 0x03D5;
+
+        write_io_port_u8(VGA_ADDR_PORT, self.0);
+        write_io_port_u8(VGA_DATA_PORT, value);
     }
 }
 
@@ -165,7 +165,7 @@ impl TextBuffer {
     }
 
     fn clear_line(&self, line: usize) {
-        let offset = (self.col + NUM_COLUMNS * self.line) as isize;
+        let offset = (self.col + NUM_COLUMNS * line) as isize;
 
         for i in 0..(NUM_COLUMNS as isize) {
             unsafe {

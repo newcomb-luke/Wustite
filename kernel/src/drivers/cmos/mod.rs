@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use spin::Mutex;
 
 use crate::drivers::{read_io_port_u8, write_io_port_u8};

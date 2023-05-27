@@ -7,22 +7,15 @@ extern crate alloc;
 mod acpi;
 mod allocator;
 mod arch;
-mod cmos;
 mod drivers;
 mod entry;
 mod gdt;
 mod interrupts;
 mod memory;
 mod std;
-use alloc::boxed::Box;
 use x86_64::VirtAddr;
 
-use crate::{
-    acpi::ACPIReader,
-    cmos::CMOS,
-    drivers::ata::{available_drives, Drive, PRIMARY_BUS, SECONDARY_BUS},
-    entry::BootInfo,
-};
+use crate::{drivers::ata::available_drives, entry::BootInfo};
 
 fn init() {
     crate::gdt::init();
@@ -43,21 +36,13 @@ fn main(boot_info: &BootInfo) {
     allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("Kernel heap initialization failed");
 
-    let acpi_reader = ACPIReader::read(phys_mem_offset).expect("ACPI not found, cannot continue");
+    // let acpi_reader = ACPIReader::read(phys_mem_offset).expect("ACPI not found, cannot continue");
 
     let available_drives = available_drives();
 
     kprintln!("{:#?}", available_drives);
 
     kprintln!("Didn't crash.");
-}
-
-fn sleep() {
-    for i in 0..40000 {
-        for _ in 0..i {
-            x86_64::instructions::nop();
-        }
-    }
 }
 
 pub fn hlt_loop() -> ! {

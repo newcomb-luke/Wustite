@@ -1,6 +1,9 @@
+#![allow(dead_code)]
+
 use core::arch::asm;
 
 pub mod ata;
+pub mod cmos;
 pub mod keyboard;
 pub mod video;
 
