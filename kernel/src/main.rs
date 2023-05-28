@@ -16,7 +16,11 @@ mod std;
 use x86_64::VirtAddr;
 
 use crate::{
-    drivers::{ata::available_drives, pci::check_pci_device_exists},
+    drivers::{
+        ata::available_drives,
+        pci::{check_pci_device_exists, check_pci_device_function_exists},
+        video::vga::graphics::GRAPHICS,
+    },
     entry::BootInfo,
 };
 
@@ -25,10 +29,16 @@ fn init() {
     crate::interrupts::init_idt();
     unsafe { crate::interrupts::PICS.lock().initialize() };
     x86_64::instructions::interrupts::enable();
+    GRAPHICS.init();
 }
 
 fn main(boot_info: &BootInfo) {
-    kprintln!("Wustite version {}.\n", env!("CARGO_PKG_VERSION"));
+    // kprintln!("Wustite version {}.\n", env!("CARGO_PKG_VERSION"));
+
+    GRAPHICS.clear_screen();
+    GRAPHICS.fill_screen(0b0111);
+
+    hlt_loop();
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
@@ -49,7 +59,23 @@ fn main(boot_info: &BootInfo) {
         for device in 0..8 {
             if let Some(header) = check_pci_device_exists(bus, device) {
                 kprintln!("Bus {bus}, device {device}:");
-                header.print_summary();
+
+                header.print_summary(false);
+
+                if header.is_multifunction {
+                    for function in 1..8 {
+                        if let Some(header) =
+                            check_pci_device_function_exists(bus, device, function)
+                        {
+                            kprintln!("    Function {function}:");
+                            header.print_summary(true);
+
+                            for _ in 0..1000000000 {
+                                x86_64::instructions::nop();
+                            }
+                        }
+                    }
+                }
             }
         }
     }
