@@ -14,6 +14,7 @@ const CRTC_REGISTER_SELECT_PORT: u16 = 0x3D4;
 const CRTC_REGISTER_DATA_PORT: u16 = 0x3D5;
 
 const VIDEO_MEMORY: *mut u8 = 0xA0000 as *mut u8;
+const VIDEO_MEMORY_U32: *mut u32 = 0xA0000 as *mut u32;
 
 const RED_PLANE: u8 = 0b0100;
 const GREEN_PLANE: u8 = 0b0010;
@@ -37,22 +38,21 @@ impl VGAGraphicsInner {
     }
 
     fn fill_screen(&mut self, color: u8) {
-        let vid_mem = VIDEO_MEMORY as *mut u32;
-
         unsafe {
             set_write_memory_planes(color);
-            vid_mem.write_bytes(0xFF, HEIGHT * 20);
+            for offset in 0..(HEIGHT * 20) {
+                VIDEO_MEMORY_U32.add(offset).write_volatile(u32::MAX);
+            }
         }
     }
 
     fn clear_screen(&mut self) {
-        let vid_mem = VIDEO_MEMORY as *mut u32;
-
         unsafe {
             set_write_memory_planes(0b1111);
-
             // It only takes 20 u32's to fill one line of the screen
-            vid_mem.write_bytes(0, HEIGHT * 20);
+            for offset in 0..(HEIGHT * 20) {
+                VIDEO_MEMORY_U32.add(offset).write_volatile(0);
+            }
         }
     }
 }
