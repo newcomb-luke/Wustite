@@ -1,9 +1,10 @@
-use alloc::string::String;
+use core::fmt::Write;
+
 use spin::Mutex;
 
 use crate::drivers::{read_io_port_u8, write_io_port_u8};
 
-use self::font::{get_char, FONT};
+use self::font::get_char;
 
 mod font;
 
@@ -37,7 +38,7 @@ const WIDTH_U8S: usize = 80;
 const MEM_SIZE_U32S: usize = HEIGHT * WIDTH_U32S;
 
 pub static GRAPHICS: VGAGraphics = VGAGraphics::new();
-pub static TEXT_BUFFER: Mutex<VGATextBuffer> = Mutex::new(VGATextBuffer::new(1, 24));
+pub static TEXT_BUFFER: Mutex<VGATextBuffer> = Mutex::new(VGATextBuffer::new(0, 0));
 
 pub struct VGATextBuffer {
     x: usize,
@@ -60,6 +61,7 @@ impl VGATextBuffer {
         if self.length != 0 {
             self.length -= 1;
 
+            GRAPHICS.set_color(CharColor::White);
             GRAPHICS.draw_char(' ', self.x + self.length, self.row);
         } else if self.row > self.y {
             self.length = WIDTH_U8S;
@@ -72,26 +74,121 @@ impl VGATextBuffer {
         self.row += 9;
     }
 
+    pub fn append_str(&mut self, s: &str) {
+        for c in s.chars() {
+            self.append_char(c);
+        }
+    }
+
     pub fn append_char(&mut self, mut c: char) {
-        if c.is_lowercase() {
-            c = c.to_uppercase().next().unwrap();
-        }
-
-        if self.length >= WIDTH_U8S {
+        if c == '\n' {
             self.newline();
+        } else {
+            if c.is_lowercase() {
+                c = c.to_uppercase().next().unwrap();
+            }
+
+            if self.length >= WIDTH_U8S {
+                self.newline();
+            }
+
+            GRAPHICS.draw_char(c, self.x + self.length, self.row);
+
+            self.length += 1;
+        }
+    }
+
+    pub fn with_color<F>(&mut self, color: CharColor, mut f: F)
+    where
+        F: FnMut(&mut Self),
+    {
+        let before = GRAPHICS.get_color();
+        GRAPHICS.set_color(color);
+
+        f(self);
+
+        GRAPHICS.set_color(before);
+    }
+
+    pub fn append_str_colored(&mut self, s: &str, color: CharColor) {
+        let before = GRAPHICS.get_color();
+        GRAPHICS.set_color(color);
+
+        for c in s.chars() {
+            self.append_char(c);
         }
 
-        GRAPHICS.draw_char(c, self.x + self.length, self.row);
-
-        self.length += 1;
+        GRAPHICS.set_color(before);
     }
 }
 
-struct VGAGraphicsInner {}
+impl Write for VGATextBuffer {
+    fn write_char(&mut self, c: char) -> core::fmt::Result {
+        self.append_char(c);
+        Ok(())
+    }
+
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        self.append_str(s);
+        Ok(())
+    }
+}
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::drivers::video::vga::graphics::_print(format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! eprint {
+    ($($arg:tt)*) => ($crate::drivers::video::vga::graphics::_eprint(format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! eprintln {
+    () => ($crate::eprint!("\n"));
+    ($($arg:tt)*) => ($crate::eprint!("{}\n", format_args!($($arg)*)));
+}
+
+#[doc(hidden)]
+pub fn _print(args: core::fmt::Arguments) {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut buffer = TEXT_BUFFER.lock();
+        buffer.write_fmt(args).unwrap()
+    });
+}
+
+#[doc(hidden)]
+pub fn _eprint(args: core::fmt::Arguments) {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut buffer = TEXT_BUFFER.lock();
+        buffer.with_color(CharColor::Red, |b| b.write_fmt(args).unwrap());
+    });
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CharColor {
+    Red,
+    Green,
+    Blue,
+    White,
+}
+
+struct VGAGraphicsInner {
+    color: CharColor,
+}
 
 impl VGAGraphicsInner {
     const fn new() -> Self {
-        Self {}
+        Self {
+            color: CharColor::White,
+        }
     }
 
     fn init(&mut self) {
@@ -117,10 +214,27 @@ impl VGAGraphicsInner {
         }
     }
 
+    fn set_color(&mut self, color: CharColor) {
+        self.color = color;
+
+        unsafe {
+            let planes = match color {
+                CharColor::Red => 0b1100,
+                CharColor::Green => 0b1010,
+                CharColor::Blue => 0b1001,
+                CharColor::White => 0b1111,
+            };
+
+            set_write_memory_planes(planes);
+        }
+    }
+
+    fn get_color(&mut self) -> CharColor {
+        self.color
+    }
+
     fn draw_char(&mut self, c: char, x: usize, y: usize) {
         unsafe {
-            set_write_memory_planes(0b1111);
-
             if let Some(bitmap) = get_char(c) {
                 for (i, row) in bitmap.iter().enumerate() {
                     VIDEO_MEMORY
@@ -156,6 +270,16 @@ impl VGAGraphics {
     pub fn clear_screen(&self) {
         let mut inner = self.inner.lock();
         inner.clear_screen();
+    }
+
+    pub fn set_color(&self, color: CharColor) {
+        let mut inner = self.inner.lock();
+        inner.set_color(color);
+    }
+
+    pub fn get_color(&self) -> CharColor {
+        let mut inner = self.inner.lock();
+        inner.get_color()
     }
 
     pub fn draw_char(&self, c: char, x: usize, y: usize) {

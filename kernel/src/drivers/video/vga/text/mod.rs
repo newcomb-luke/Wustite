@@ -20,46 +20,6 @@ lazy_static! {
         Mutex::new(TextBuffer::new(REGULAR_FG, Color::Black));
 }
 
-#[macro_export]
-macro_rules! kprint {
-    ($($arg:tt)*) => ($crate::drivers::video::vga::text::_kprint(format_args!($($arg)*)));
-}
-
-#[macro_export]
-macro_rules! kprintln {
-    () => ($crate::kprint!("\n"));
-    ($($arg:tt)*) => ($crate::kprint!("{}\n", format_args!($($arg)*)));
-}
-
-#[macro_export]
-macro_rules! keprint {
-    ($($arg:tt)*) => ($crate::drivers::video::vga::text::_keprint(format_args!($($arg)*)));
-}
-
-#[macro_export]
-macro_rules! keprintln {
-    () => ($crate::keprint!("\n"));
-    ($($arg:tt)*) => ($crate::keprint!("{}\n", format_args!($($arg)*)));
-}
-
-#[doc(hidden)]
-pub fn _kprint(args: core::fmt::Arguments) {
-    // x86_64::instructions::interrupts::without_interrupts(|| {
-    //     TEXT_BUFFER.lock().write_fmt(args).unwrap();
-    // });
-}
-
-#[doc(hidden)]
-pub fn _keprint(args: core::fmt::Arguments) {
-    // x86_64::instructions::interrupts::without_interrupts(|| {
-    //     let mut buffer = TEXT_BUFFER.lock();
-
-    //     buffer.set_fg(ERROR_FG);
-    //     buffer.write_fmt(args).unwrap();
-    //     buffer.set_fg(REGULAR_FG);
-    // });
-}
-
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 #[allow(dead_code)]

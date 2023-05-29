@@ -1,4 +1,4 @@
-use crate::{kprint, kprintln};
+use crate::{print, println};
 
 use super::{read_io_port_u32, write_io_port_u32};
 
@@ -240,22 +240,21 @@ impl PCICommonHeader {
 
     pub fn print_summary(&self, function: bool) {
         if function {
-            kprint!("    ");
+            print!("    ");
         }
 
-        kprintln!(
+        println!(
             "    PCI device {:04x}:{:04x}",
-            self.vendor_id,
-            self.device_id
+            self.vendor_id, self.device_id
         );
         if function {
-            kprint!("    ");
+            print!("    ");
         }
-        kprintln!("         Type: {:?}", self.header_type);
+        println!("         Type: {:?}", self.header_type);
         if function {
-            kprint!("    ");
+            print!("    ");
         }
-        kprintln!(
+        println!(
             "         Function: {:?}",
             PCIDeviceClass::from(self.identifiers())
         );

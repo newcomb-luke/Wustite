@@ -3,7 +3,7 @@ use common::{
     PHYS_MAP_VIRTUAL_OFFSET,
 };
 
-use crate::{entry::memory::MemoryRegion, hlt_loop, keprintln};
+use crate::{entry::memory::MemoryRegion, eprintln, hlt_loop};
 use core::panic::PanicInfo;
 
 #[no_mangle]
@@ -45,6 +45,6 @@ pub struct BootInfo {
 /// This function is called on panic.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    keprintln!("{}", info);
+    eprintln!("{}", info);
     hlt_loop();
 }

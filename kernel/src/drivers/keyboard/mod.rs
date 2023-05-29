@@ -1,4 +1,3 @@
-use crate::kprint;
 use alloc::collections::VecDeque;
 use lazy_static::lazy_static;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
@@ -84,8 +83,8 @@ pub fn handle_keyboard_interrupt() {
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
-                DecodedKey::Unicode(character) => {
-                    KEYBOARD_BUFFER.put_char(character);
+                DecodedKey::Unicode(_character) => {
+                    // KEYBOARD_BUFFER.put_char(character);
                 }
                 _ => {} // DecodedKey::RawKey(key) => kprint!("{:?}", key),
             }
