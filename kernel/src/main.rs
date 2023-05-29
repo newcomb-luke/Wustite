@@ -19,7 +19,7 @@ use crate::{
     drivers::{
         ata::available_drives,
         pci::{check_pci_device_exists, check_pci_device_function_exists},
-        video::vga::graphics::GRAPHICS,
+        video::vga::graphics::{GRAPHICS, TEXT_BUFFER},
     },
     entry::BootInfo,
 };
@@ -37,8 +37,8 @@ fn main(boot_info: &BootInfo) {
 
     GRAPHICS.clear_screen();
 
-    GRAPHICS.draw_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ []\\^_`", 2, 16);
-    GRAPHICS.draw_str("!\"#$%&'()*+,-./0123456789:;<=>?@", 2, 25);
+    // GRAPHICS.draw_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ []\\^_`", 2, 16);
+    // GRAPHICS.draw_str("!\"#$%&'()*+,-./0123456789:;<=>?@", 2, 25);
 
     hlt_loop();
 

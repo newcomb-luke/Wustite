@@ -1,3 +1,4 @@
+use alloc::string::String;
 use spin::Mutex;
 
 use crate::drivers::{read_io_port_u8, write_io_port_u8};
@@ -36,6 +37,28 @@ const WIDTH_U8S: usize = 80;
 const MEM_SIZE_U32S: usize = HEIGHT * WIDTH_U32S;
 
 pub static GRAPHICS: VGAGraphics = VGAGraphics::new();
+pub static TEXT_BUFFER: Mutex<VGATextBuffer> = Mutex::new(VGATextBuffer::new(2, 16));
+
+pub struct VGATextBuffer {
+    x: usize,
+    y: usize,
+    length: usize,
+}
+
+impl VGATextBuffer {
+    pub const fn new(x: usize, y: usize) -> Self {
+        Self { x, y, length: 0 }
+    }
+
+    pub fn append_char(&mut self, mut c: char) {
+        if c.is_lowercase() {
+            c = c.to_uppercase().next().unwrap();
+        }
+
+        GRAPHICS.draw_char(c, self.x + self.length, self.y);
+        self.length += 1;
+    }
+}
 
 struct VGAGraphicsInner {}
 
