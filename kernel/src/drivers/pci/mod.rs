@@ -3,8 +3,6 @@ use core::fmt::Display;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-use crate::{print, println};
-
 use super::{read_io_port_u32, write_io_port_u32};
 
 const CONFIG_ADDRESS: u16 = 0xCF8;
@@ -108,7 +106,7 @@ impl PCISubsystemInner {
         address |= (addr.bus as u32) << 16;
         address |= (addr.device as u32) << 11;
         address |= (addr.function as u32) << 8;
-        address |= (offset as u32);
+        address |= offset as u32;
 
         address
     }

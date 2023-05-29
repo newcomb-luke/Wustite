@@ -14,7 +14,7 @@ mod interrupts;
 mod memory;
 mod std;
 
-use drivers::keyboard::KEYBOARD_BUFFER;
+use drivers::{keyboard::KEYBOARD_BUFFER, serial::SERIAL0};
 use x86_64::VirtAddr;
 
 use crate::{
@@ -35,15 +35,14 @@ fn main() {
 
     // println!("{:#?}", available_drives);
 
-    logln!("Hello!");
-
     let pci_devices = PCI_SUBSYSTEM.enumerate_pci_devices();
 
     let mut vga_driver = None;
 
     for device in pci_devices {
-        println!("{}", device);
+        logln!("{}", device);
 
+        #[allow(irrefutable_let_patterns)]
         if let PCIDevice::General(device) = device {
             if device.vendor_id() == 0x15AD && device.device_id() == 0x0405 {
                 match VMWareSVGADriver::new(device) {
@@ -79,8 +78,14 @@ fn init() {
     crate::interrupts::init_idt();
     unsafe { crate::interrupts::PICS.lock().initialize() };
     x86_64::instructions::interrupts::enable();
+
     GRAPHICS.init();
     GRAPHICS.clear_screen();
+
+    {
+        let mut serial = SERIAL0.lock();
+        serial.initialize();
+    }
 }
 
 pub fn hlt_loop() -> ! {

@@ -6,7 +6,7 @@ use crate::{
         },
         read_io_port_u32, write_io_port_u32,
     },
-    println,
+    logln,
 };
 
 const SVGA_INDEX_OFFSET: u16 = 0;
@@ -61,23 +61,23 @@ impl VMWareSVGADriver {
             return Err(DriverInitError::SpecUnsupportedError);
         }
 
-        println!("SVGA base port: {:04x}", base_port);
-        println!("Framebuffer start: {:04x}", driver.read_framebuffer_start());
-        println!(
+        logln!("SVGA base port: {:04x}", base_port);
+        logln!("Framebuffer start: {:04x}", driver.read_framebuffer_start());
+        logln!(
             "Framebuffer offset: {:04x}",
             driver.read_framebuffer_offset()
         );
-        println!("Framebuffer size: {:04x}", driver.read_framebuffer_size());
-        println!("FIFO start: {:04x}", driver.read_fifo_start());
-        println!("FIFO size: {:04x}", driver.read_fifo_size());
+        logln!("Framebuffer size: {:04x}", driver.read_framebuffer_size());
+        logln!("FIFO start: {:04x}", driver.read_fifo_start());
+        logln!("FIFO size: {:04x}", driver.read_fifo_size());
 
-        println!(
+        logln!(
             "Max dimensions: {}x{}",
             driver.read_max_width(),
             driver.read_max_height()
         );
 
-        println!(
+        logln!(
             "Current dimensions: {}x{}",
             driver.read_width(),
             driver.read_height()
