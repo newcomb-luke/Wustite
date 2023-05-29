@@ -6,6 +6,7 @@ pub mod ata;
 pub mod cmos;
 pub mod keyboard;
 pub mod pci;
+pub mod serial;
 pub mod video;
 
 pub unsafe fn write_io_port_u8(port: u16, data: u8) {

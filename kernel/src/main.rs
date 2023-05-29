@@ -35,6 +35,8 @@ fn main() {
 
     // println!("{:#?}", available_drives);
 
+    logln!("Hello!");
+
     let pci_devices = PCI_SUBSYSTEM.enumerate_pci_devices();
 
     let mut vga_driver = None;
@@ -60,10 +62,6 @@ fn main() {
 fn kernel_init(boot_info: &BootInfo) {
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
-
-    for region in boot_info.memory_regions {
-        println!("Start: {:08x}, end: {:08x}", region.start, region.end);
-    }
 
     let mut frame_allocator =
         unsafe { memory::BootInfoFrameAllocator::init(boot_info.memory_regions) };
