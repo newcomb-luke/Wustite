@@ -2,6 +2,14 @@ use spin::Mutex;
 
 use crate::drivers::{read_io_port_u8, write_io_port_u8};
 
+use self::font::{get_char, FONT};
+
+mod font;
+
+// http://www.osdever.net/FreeVGA/vga/graphreg.htm#05
+//
+// http://computer-programming-forum.com/45-asm/5a88e2d82140a8ef.htm
+
 const MAIN_INDEX_REGISTER_PORT: u16 = 0x3C0;
 const MAIN_INDEX_REGISTER_RESET_PORT: u16 = 0x3DA;
 const MISC_OUTPUT_REGISTER_WRITE_PORT: u16 = 0x3C2;
@@ -23,6 +31,9 @@ const HIGHLIGHT_PLANE: u8 = 0b1000;
 
 const HEIGHT: usize = 480;
 const WIDTH: usize = 640;
+const WIDTH_U32S: usize = 20;
+const WIDTH_U8S: usize = 80;
+const MEM_SIZE_U32S: usize = HEIGHT * WIDTH_U32S;
 
 pub static GRAPHICS: VGAGraphics = VGAGraphics::new();
 
@@ -40,7 +51,7 @@ impl VGAGraphicsInner {
     fn fill_screen(&mut self, color: u8) {
         unsafe {
             set_write_memory_planes(color);
-            for offset in 0..(HEIGHT * 20) {
+            for offset in 0..MEM_SIZE_U32S {
                 VIDEO_MEMORY_U32.add(offset).write_volatile(u32::MAX);
             }
         }
@@ -50,8 +61,22 @@ impl VGAGraphicsInner {
         unsafe {
             set_write_memory_planes(0b1111);
             // It only takes 20 u32's to fill one line of the screen
-            for offset in 0..(HEIGHT * 20) {
+            for offset in 0..MEM_SIZE_U32S {
                 VIDEO_MEMORY_U32.add(offset).write_volatile(0);
+            }
+        }
+    }
+
+    fn draw_char(&mut self, c: char, x: usize, y: usize) {
+        unsafe {
+            set_write_memory_planes(0b1111);
+
+            if let Some(bitmap) = get_char(c) {
+                for (i, row) in bitmap.iter().enumerate() {
+                    VIDEO_MEMORY
+                        .add((i + y) * WIDTH_U8S + x)
+                        .write_volatile(*row);
+                }
             }
         }
     }
@@ -81,6 +106,19 @@ impl VGAGraphics {
     pub fn clear_screen(&self) {
         let mut inner = self.inner.lock();
         inner.clear_screen();
+    }
+
+    pub fn draw_char(&self, c: char, x: usize, y: usize) {
+        let mut inner = self.inner.lock();
+        inner.draw_char(c, x, y);
+    }
+
+    pub fn draw_str(&self, s: &str, x: usize, y: usize) {
+        let mut inner = self.inner.lock();
+
+        for (i, c) in s.chars().enumerate() {
+            inner.draw_char(c, x + i, y);
+        }
     }
 }
 

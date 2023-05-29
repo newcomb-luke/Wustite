@@ -36,7 +36,9 @@ fn main(boot_info: &BootInfo) {
     // kprintln!("Wustite version {}.\n", env!("CARGO_PKG_VERSION"));
 
     GRAPHICS.clear_screen();
-    GRAPHICS.fill_screen(0b0111);
+
+    GRAPHICS.draw_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ []\\^_`", 2, 16);
+    GRAPHICS.draw_str("!\"#$%&'()*+,-./0123456789:;<=>?@", 2, 25);
 
     hlt_loop();
 
