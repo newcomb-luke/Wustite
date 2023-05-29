@@ -31,7 +31,7 @@ pub unsafe extern "C" fn _start() -> ! {
         physical_memory_offset: PHYS_MAP_VIRTUAL_OFFSET,
     };
 
-    crate::main(&boot_info);
+    crate::kernel_init(&boot_info);
 
     hlt_loop();
 }

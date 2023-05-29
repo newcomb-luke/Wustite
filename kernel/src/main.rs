@@ -13,43 +13,41 @@ mod gdt;
 mod interrupts;
 mod memory;
 mod std;
+use drivers::keyboard::KEYBOARD_BUFFER;
 use x86_64::VirtAddr;
 
 use crate::{
     drivers::{
         ata::available_drives,
+        keyboard::BACKSPACE,
         pci::{check_pci_device_exists, check_pci_device_function_exists},
         video::vga::graphics::{GRAPHICS, TEXT_BUFFER},
     },
     entry::BootInfo,
 };
 
-fn init() {
-    crate::gdt::init();
-    crate::interrupts::init_idt();
-    unsafe { crate::interrupts::PICS.lock().initialize() };
-    x86_64::instructions::interrupts::enable();
-    GRAPHICS.init();
-}
+fn main() {
+    GRAPHICS.draw_str("WUSTITE VERSION 0.1.1", 0, 0);
+    GRAPHICS.draw_char('>', 0, 24);
 
-fn main(boot_info: &BootInfo) {
-    // kprintln!("Wustite version {}.\n", env!("CARGO_PKG_VERSION"));
+    loop {
+        if let Some(c) = KEYBOARD_BUFFER.get_char() {
+            let mut text_buffer = TEXT_BUFFER.lock();
 
-    GRAPHICS.clear_screen();
+            if c == '\n' {
+                text_buffer.newline();
+            } else if c as u8 != BACKSPACE {
+                text_buffer.append_char(c);
+            } else {
+                text_buffer.backspace();
+            }
+        }
 
-    // GRAPHICS.draw_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ []\\^_`", 2, 16);
-    // GRAPHICS.draw_str("!\"#$%&'()*+,-./0123456789:;<=>?@", 2, 25);
+        // Wait until the next interrupt
+        x86_64::instructions::hlt();
+    }
 
     hlt_loop();
-
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
-    let mut mapper = unsafe { memory::init(phys_mem_offset) };
-
-    let mut frame_allocator =
-        unsafe { memory::BootInfoFrameAllocator::init(boot_info.memory_regions) };
-
-    allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("Kernel heap initialization failed");
 
     // let acpi_reader = ACPIReader::read(phys_mem_offset).expect("ACPI not found, cannot continue");
 
@@ -81,8 +79,30 @@ fn main(boot_info: &BootInfo) {
             }
         }
     }
+}
 
-    kprintln!("Didn't crash.");
+fn kernel_init(boot_info: &BootInfo) {
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let mut mapper = unsafe { memory::init(phys_mem_offset) };
+
+    let mut frame_allocator =
+        unsafe { memory::BootInfoFrameAllocator::init(boot_info.memory_regions) };
+
+    allocator::init_heap(&mut mapper, &mut frame_allocator)
+        .expect("Kernel heap initialization failed");
+
+    KEYBOARD_BUFFER.init();
+
+    main();
+}
+
+fn init() {
+    crate::gdt::init();
+    crate::interrupts::init_idt();
+    unsafe { crate::interrupts::PICS.lock().initialize() };
+    x86_64::instructions::interrupts::enable();
+    GRAPHICS.init();
+    GRAPHICS.clear_screen();
 }
 
 pub fn hlt_loop() -> ! {

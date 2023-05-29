@@ -37,17 +37,39 @@ const WIDTH_U8S: usize = 80;
 const MEM_SIZE_U32S: usize = HEIGHT * WIDTH_U32S;
 
 pub static GRAPHICS: VGAGraphics = VGAGraphics::new();
-pub static TEXT_BUFFER: Mutex<VGATextBuffer> = Mutex::new(VGATextBuffer::new(2, 16));
+pub static TEXT_BUFFER: Mutex<VGATextBuffer> = Mutex::new(VGATextBuffer::new(1, 24));
 
 pub struct VGATextBuffer {
     x: usize,
     y: usize,
     length: usize,
+    row: usize,
 }
 
 impl VGATextBuffer {
     pub const fn new(x: usize, y: usize) -> Self {
-        Self { x, y, length: 0 }
+        Self {
+            x,
+            y,
+            length: 0,
+            row: y,
+        }
+    }
+
+    pub fn backspace(&mut self) {
+        if self.length != 0 {
+            self.length -= 1;
+
+            GRAPHICS.draw_char(' ', self.x + self.length, self.row);
+        } else if self.row > self.y {
+            self.length = WIDTH_U8S;
+            self.row -= 9;
+        }
+    }
+
+    pub fn newline(&mut self) {
+        self.length = 0;
+        self.row += 9;
     }
 
     pub fn append_char(&mut self, mut c: char) {
@@ -55,7 +77,12 @@ impl VGATextBuffer {
             c = c.to_uppercase().next().unwrap();
         }
 
-        GRAPHICS.draw_char(c, self.x + self.length, self.y);
+        if self.length >= WIDTH_U8S {
+            self.newline();
+        }
+
+        GRAPHICS.draw_char(c, self.x + self.length, self.row);
+
         self.length += 1;
     }
 }
