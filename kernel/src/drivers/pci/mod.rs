@@ -1,3 +1,8 @@
+use core::fmt::Display;
+
+use alloc::vec::Vec;
+use spin::Mutex;
+
 use crate::{print, println};
 
 use super::{read_io_port_u32, write_io_port_u32};
@@ -6,23 +11,324 @@ const CONFIG_ADDRESS: u16 = 0xCF8;
 const CONFIG_DATA: u16 = 0xCFC;
 
 const CONFIG_ENABLE: u32 = 0x80000000;
+pub const BUS_MASTER_ENABLE: u16 = 0x100;
+pub const MEMORY_SPACE_ENABLE: u16 = 0x010;
+pub const IO_SPACE_ENABLE: u16 = 0x001;
 
-fn pci_config_read_u32(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
-    let mut address = CONFIG_ENABLE;
+const DEVICE_ID_OFFSET: u8 = 0;
+const COMMAND_REGISTER_OFFSET: u8 = 3;
 
-    address |= (bus as u32) << 16;
-    address |= (device as u32) << 11;
-    address |= (function as u32) << 8;
-    address |= (offset as u32) * 4;
+pub static PCI_SUBSYSTEM: PCISubsystem = PCISubsystem::new();
 
-    unsafe {
-        write_io_port_u32(CONFIG_ADDRESS, address.to_le());
+struct PCISubsystemInner {}
 
-        read_io_port_u32(CONFIG_DATA)
+impl PCISubsystemInner {
+    const fn new() -> Self {
+        Self {}
+    }
+
+    fn enumerate_pci_devices(&mut self) -> Vec<PCIDevice> {
+        let mut devices = Vec::new();
+
+        for bus in 0..8 {
+            for device in 0..32 {
+                let device_addr = PCIAddress::new(bus, device);
+                if let Some(header) = self.get_pci_header(device_addr) {
+                    if !header.is_multifunction {
+                        if let Some(device) = self.get_device(header, device_addr) {
+                            devices.push(device);
+                        }
+                    } else {
+                        for function in 0..8 {
+                            let addr = PCIAddress::function(bus, device, function);
+
+                            if let Some(header) = self.get_pci_header(addr) {
+                                if let Some(device) = self.get_device(header, addr) {
+                                    devices.push(device);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        devices
+    }
+
+    fn get_device(&mut self, header: PCICommonHeader, addr: PCIAddress) -> Option<PCIDevice> {
+        // Only support "General" devices for now
+        if header.header_type == PCIHeaderType::General {
+            let general_header = unsafe { self.get_pci_general_header(addr) };
+
+            let general_device = PCIGeneralDevice {
+                addr,
+                common_header: header,
+                header: general_header,
+                device_class: PCIDeviceClass::from(header.identifiers()),
+            };
+
+            Some(PCIDevice::General(general_device))
+        } else {
+            None
+        }
+    }
+
+    /// This NEEDS to be called using the address of a device that is in fact a general device
+    unsafe fn get_pci_general_header(&mut self, addr: PCIAddress) -> PCIGeneralHeader {
+        let mut buffer: [u32; 12] = [0; 12];
+
+        // u32's 4 through 16 are after the common header and make up the general header
+        for i in 4..16 {
+            buffer[i - 4] = u32::from_le(self.pci_config_read_u32(addr, i as u8));
+        }
+
+        PCIGeneralHeader::from(buffer)
+    }
+
+    fn get_pci_header(&mut self, addr: PCIAddress) -> Option<PCICommonHeader> {
+        // If the PCI bus returns all 1's, then there is no device or function at that address
+        if self.pci_config_read_u32(addr, 0) != u32::MAX {
+            let mut buffer: [u32; 4] = [0; 4];
+
+            for i in 0..4 {
+                buffer[i] = u32::from_le(self.pci_config_read_u32(addr, i as u8));
+            }
+
+            let header = PCICommonHeader::from(buffer);
+            Some(header)
+        } else {
+            None
+        }
+    }
+
+    fn get_pci_config_address(&mut self, addr: PCIAddress, offset: u8) -> u32 {
+        let mut address = CONFIG_ENABLE;
+
+        address |= (addr.bus as u32) << 16;
+        address |= (addr.device as u32) << 11;
+        address |= (addr.function as u32) << 8;
+        address |= (offset as u32);
+
+        address
+    }
+
+    // Offset is in *16 byte words!!!*
+    fn pci_config_read_u16(&mut self, addr: PCIAddress, offset: u8) -> u16 {
+        // Cut off the last odd bit
+        let u32_offset = offset & 0xFE;
+        let address = self.get_pci_config_address(addr, u32_offset * 2);
+
+        unsafe {
+            write_io_port_u32(CONFIG_ADDRESS, address.to_le());
+
+            let data = read_io_port_u32(CONFIG_DATA);
+
+            // If the offset was odd
+            if offset % 2 != 0 {
+                (data & 0xFFFF) as u16
+            }
+            // Of the offset was even
+            else {
+                (data >> 16) as u16
+            }
+        }
+    }
+
+    // Offset is in *16 byte words!!!*
+    fn pci_config_write_u16(&mut self, addr: PCIAddress, offset: u8, value: u16) {
+        // Cut off the last odd bit
+        let u32_offset = offset & 0xFE;
+        let address = self.get_pci_config_address(addr, u32_offset * 2);
+
+        let before = unsafe {
+            write_io_port_u32(CONFIG_ADDRESS, address);
+            read_io_port_u32(CONFIG_DATA)
+        };
+
+        let data_to_write = if offset % 2 != 0 {
+            // If the offset was odd
+            (value as u32) | (before & 0xFFFF0000)
+        } else {
+            // Of the offset was even
+            ((value as u32) << 16) | (before & 0x0000FFFF)
+        };
+
+        unsafe {
+            write_io_port_u32(CONFIG_ADDRESS, address.to_le());
+
+            write_io_port_u32(CONFIG_DATA, data_to_write);
+        }
+    }
+
+    // Offset is in *32 byte words!!!*
+    fn pci_config_read_u32(&mut self, addr: PCIAddress, offset: u8) -> u32 {
+        let address = self.get_pci_config_address(addr, offset * 4);
+
+        unsafe {
+            write_io_port_u32(CONFIG_ADDRESS, address.to_le());
+
+            read_io_port_u32(CONFIG_DATA)
+        }
+    }
+
+    // Offset is in *32 byte words!!!*
+    fn pci_config_write_u32(&mut self, addr: PCIAddress, offset: u8, value: u32) {
+        let address = self.get_pci_config_address(addr, offset * 4);
+
+        unsafe {
+            write_io_port_u32(CONFIG_ADDRESS, address.to_le());
+
+            write_io_port_u32(CONFIG_DATA, value);
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+pub struct PCISubsystem {
+    inner: Mutex<PCISubsystemInner>,
+}
+
+impl PCISubsystem {
+    pub const fn new() -> Self {
+        Self {
+            inner: Mutex::new(PCISubsystemInner::new()),
+        }
+    }
+
+    pub fn enumerate_pci_devices(&self) -> Vec<PCIDevice> {
+        let mut inner = self.inner.lock();
+        inner.enumerate_pci_devices()
+    }
+
+    pub fn send_command(&self, device: &mut PCIGeneralDevice, command: u16) {
+        let mut inner = self.inner.lock();
+        let before = inner.pci_config_read_u16(device.addr(), COMMAND_REGISTER_OFFSET);
+        inner.pci_config_write_u16(device.addr(), COMMAND_REGISTER_OFFSET, before | command);
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum PCIDevice {
+    General(PCIGeneralDevice),
+}
+
+impl PCIDevice {
+    pub fn addr(&self) -> PCIAddress {
+        match self {
+            Self::General(g) => g.addr,
+        }
+    }
+}
+
+impl Display for PCIDevice {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::General(g) => g.fmt(f),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct PCIGeneralDevice {
+    addr: PCIAddress,
+    common_header: PCICommonHeader,
+    header: PCIGeneralHeader,
+    device_class: PCIDeviceClass,
+}
+
+impl Display for PCIGeneralDevice {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!("{} {}: ", self.addr, self.device_class))?;
+
+        if let Some(device_name) =
+            get_device_name(self.common_header.device_id, self.common_header.vendor_id)
+        {
+            f.write_str(device_name)
+        } else {
+            f.write_fmt(format_args!(
+                "Unknown ({:04x}:{:04x})",
+                self.common_header.vendor_id, self.common_header.device_id
+            ))
+        }
+    }
+}
+
+impl PCIGeneralDevice {
+    pub fn device_class(&self) -> PCIDeviceClass {
+        self.device_class
+    }
+
+    pub fn vendor_id(&self) -> u16 {
+        self.common_header.vendor_id
+    }
+
+    pub fn device_id(&self) -> u16 {
+        self.common_header.device_id
+    }
+
+    pub fn bar0(&self) -> u32 {
+        self.header.bar0
+    }
+
+    pub fn addr(&self) -> PCIAddress {
+        self.addr
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct PCIAddress {
+    pub bus: u8,
+    pub device: u8,
+    pub function: u8,
+}
+
+impl PCIAddress {
+    pub fn new(bus: u8, device: u8) -> Self {
+        Self {
+            bus,
+            device,
+            function: 0,
+        }
+    }
+
+    pub fn function(bus: u8, device: u8, function: u8) -> Self {
+        Self {
+            bus,
+            device,
+            function,
+        }
+    }
+}
+
+impl Display for PCIAddress {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!(
+            "{:02x}:{:02x}.{}",
+            self.bus, self.device, self.function
+        ))
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct PCIGeneralHeader {
+    bar0: u32,
+    bar1: u32,
+    bar2: u32,
+    bar3: u32,
+    bar4: u32,
+    bar5: u32,
+    cardbus_cis_pointer: u32,
+    subsystem_id: u16,
+    subsystem_vendor_id: u16,
+    expansion_rom_base_addr: u32,
+    capabilities_pointer: u8,
+    max_latency: u8,
+    min_grant: u8,
+    interrupt_pin: u8,
+    interrupt_line: u8,
+}
+
+#[derive(Clone, Copy)]
 pub struct PCICommonHeader {
     pub device_id: u16,
     pub vendor_id: u16,
@@ -54,6 +360,17 @@ pub enum Unclassified {
     Unknown,
 }
 
+impl Display for Unclassified {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            Self::NonVGACompatible => "Non-VGA compatible controller",
+            Self::VGACompatible => "VGA compatible controller",
+            Self::Unknown => "Unknown unclassified",
+        };
+        f.write_str(s)
+    }
+}
+
 impl From<PCIDeviceIdentifiers> for Unclassified {
     fn from(value: PCIDeviceIdentifiers) -> Self {
         match value.subclass {
@@ -76,6 +393,24 @@ pub enum MassStorageController {
     SASController,
     NVMController,
     Other,
+}
+
+impl Display for MassStorageController {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            Self::SCSIController => "SCSI controller",
+            Self::IDEController => "IDE controller",
+            Self::FloppyController => "Floppy controller",
+            Self::IPIController => "IPI controller",
+            Self::RAIDController => "RAID controller",
+            Self::ATAController => "ATA controller",
+            Self::SATAController => "SATA controller",
+            Self::SASController => "SAS controller",
+            Self::NVMController => "Non-Volatile memory controller",
+            Self::Other => "Other storage controller",
+        };
+        f.write_str(s)
+    }
 }
 
 impl From<PCIDeviceIdentifiers> for MassStorageController {
@@ -108,6 +443,25 @@ pub enum Bridge {
     RACEway,
     InfiniBandToPCI,
     Other,
+}
+
+impl Display for Bridge {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            Self::Host => "Host bridge",
+            Self::ISA => "ISA bridge",
+            Self::EISA => "EISA bridge",
+            Self::MCA => "MCA bridge",
+            Self::PCIToPCI => "PCI bridge",
+            Self::PCMCIA => "PCMCIA bridge",
+            Self::NuBus => "NuBus bridge",
+            Self::CardBus => "CardBus bridge",
+            Self::RACEway => "RACEway bridge",
+            Self::InfiniBandToPCI => "InfiniBand bridge",
+            Self::Other => "Other bridge",
+        };
+        f.write_str(s)
+    }
 }
 
 impl From<PCIDeviceIdentifiers> for Bridge {
@@ -159,6 +513,36 @@ pub enum PCIDeviceClass {
     NonEssential,
     CoProcessor,
     Unknown,
+}
+
+impl Display for PCIDeviceClass {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            Self::Unclassified(u) => return u.fmt(f),
+            Self::MassStorage(m) => return m.fmt(f),
+            Self::Network => "Network controller",
+            Self::Display => "Display controller",
+            Self::Multimedia => "Multimedia controller",
+            Self::Memory => "RAM memory",
+            Self::Bridge(b) => return b.fmt(f),
+            Self::SimpleCommunication => "Communication controller",
+            Self::BaseSystemPeripheral => "System peripheral",
+            Self::InputDevice => "Input device",
+            Self::DockingStation => "Docking station",
+            Self::Processor => "Processor",
+            Self::SerialBus => "Serial bus controller",
+            Self::Wireless => "Wireless controller",
+            Self::Intelligent => "Intelligent controller",
+            Self::SatelliteCommunication => "Satellite controller",
+            Self::Encryption => "Encryption device",
+            Self::SignalProcessing => "Signal processing controller",
+            Self::ProcessingAccelerator => "Processing accelerator",
+            Self::NonEssential => "Non-essential",
+            Self::CoProcessor => "Co-processor",
+            Self::Unknown => "Unknown",
+        };
+        f.write_str(s)
+    }
 }
 
 impl From<PCIDeviceIdentifiers> for PCIDeviceClass {
@@ -229,6 +613,29 @@ impl From<[u32; 4]> for PCICommonHeader {
     }
 }
 
+impl From<[u32; 12]> for PCIGeneralHeader {
+    fn from(value: [u32; 12]) -> Self {
+        PCIGeneralHeader {
+            bar0: value[0],
+            bar1: value[1],
+            bar2: value[2],
+            bar3: value[3],
+            bar4: value[4],
+            bar5: value[5],
+            cardbus_cis_pointer: value[6],
+            subsystem_id: (value[7] >> 16) as u16,
+            subsystem_vendor_id: (value[7] & 0xFFFF) as u16,
+            expansion_rom_base_addr: value[8],
+            capabilities_pointer: (value[9] & 0xFF) as u8,
+            // Yes we meant to skip 10, it is just a reserved u32
+            max_latency: (value[11] >> 24) as u8,
+            min_grant: ((value[11] >> 16) & 0xFF) as u8,
+            interrupt_pin: ((value[11] >> 8) & 0xFF) as u8,
+            interrupt_line: (value[11] & 0xFF) as u8,
+        }
+    }
+}
+
 impl PCICommonHeader {
     fn identifiers(&self) -> PCIDeviceIdentifiers {
         PCIDeviceIdentifiers {
@@ -237,56 +644,15 @@ impl PCICommonHeader {
             prog_if: self.prog_if,
         }
     }
+}
 
-    pub fn print_summary(&self, function: bool) {
-        if function {
-            print!("    ");
-        }
-
-        println!(
-            "    PCI device {:04x}:{:04x}",
-            self.vendor_id, self.device_id
-        );
-        if function {
-            print!("    ");
-        }
-        println!("         Type: {:?}", self.header_type);
-        if function {
-            print!("    ");
-        }
-        println!(
-            "         Function: {:?}",
-            PCIDeviceClass::from(self.identifiers())
-        );
+fn get_device_name(device_id: u16, vendor_id: u16) -> Option<&'static str> {
+    match vendor_id {
+        // VMWare
+        0x15AD => match device_id {
+            0x0405 => Some("VMWare SVGA-II"),
+            _ => None,
+        },
+        _ => None,
     }
-}
-
-fn get_pci_header(bus: u8, device: u8, function: u8) -> Option<PCICommonHeader> {
-    // If the PCI bus returns all 1's, then there is no device or function at that address
-    if pci_config_read_u32(bus, device, function, 0) != u32::MAX {
-        let mut buffer: [u32; 4] = [0; 4];
-
-        for i in 0..4 {
-            buffer[i] = u32::from_le(pci_config_read_u32(bus, device, function, i as u8));
-        }
-
-        let header = PCICommonHeader::from(buffer);
-        Some(header)
-    } else {
-        None
-    }
-}
-
-pub fn check_pci_device_exists(bus: u8, device: u8) -> Option<PCICommonHeader> {
-    get_pci_header(bus, device, 0)
-}
-
-/// Make sure to only call this function with devices that report being Multifunction,
-/// otherwise you might get 256 of the same function 0
-pub fn check_pci_device_function_exists(
-    bus: u8,
-    device: u8,
-    function: u8,
-) -> Option<PCICommonHeader> {
-    get_pci_header(bus, device, function)
 }

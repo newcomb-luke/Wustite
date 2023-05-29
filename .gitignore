@@ -18,17 +18,13 @@ Cargo.lock
 *.ini
 *.o
 *.a
+build/
 
 # Clion
 .idea
 
 # Vim
 *.vim
-
-# Toolchain
-toolchain/*
-!toolchain/config.mk
-!toolchain/toolchain.mk
 
 # Added by cargo
 

@@ -20,8 +20,8 @@ use x86_64::VirtAddr;
 use crate::{
     drivers::{
         ata::available_drives,
-        pci::{check_pci_device_exists, check_pci_device_function_exists},
-        video::vga::graphics::{GRAPHICS, TEXT_BUFFER},
+        pci::{PCIDevice, PCI_SUBSYSTEM},
+        video::{svga::vmware_svga_2::VMWareSVGADriver, vga::graphics::GRAPHICS},
     },
     entry::BootInfo,
 };
@@ -29,32 +29,27 @@ use crate::{
 fn main() {
     println!("Wustite version {}\n", env!("CARGO_PKG_VERSION"));
 
-    {
-        let mut buffer = TEXT_BUFFER.lock();
-        buffer.append_str_colored("Wow!\n", drivers::video::vga::graphics::CharColor::Green);
-    }
-
     // let acpi_reader = ACPIReader::read(phys_mem_offset).expect("ACPI not found, cannot continue");
 
-    let available_drives = available_drives();
+    // let available_drives = available_drives();
 
-    println!("{:#?}", available_drives);
+    // println!("{:#?}", available_drives);
 
-    for bus in 0..1 {
-        for device in 0..8 {
-            if let Some(header) = check_pci_device_exists(bus, device) {
-                println!("Bus {bus}, device {device}:");
+    let pci_devices = PCI_SUBSYSTEM.enumerate_pci_devices();
 
-                header.print_summary(false);
+    let mut vga_driver = None;
 
-                if header.is_multifunction {
-                    for function in 1..8 {
-                        if let Some(header) =
-                            check_pci_device_function_exists(bus, device, function)
-                        {
-                            println!("    Function {function}:");
-                            header.print_summary(true);
-                        }
+    for device in pci_devices {
+        println!("{}", device);
+
+        if let PCIDevice::General(device) = device {
+            if device.vendor_id() == 0x15AD && device.device_id() == 0x0405 {
+                match VMWareSVGADriver::new(device) {
+                    Ok(driver) => {
+                        vga_driver = Some(driver);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to initialize SVGA driver: {e:?}");
                     }
                 }
             }
@@ -65,6 +60,10 @@ fn main() {
 fn kernel_init(boot_info: &BootInfo) {
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
+
+    for region in boot_info.memory_regions {
+        println!("Start: {:08x}, end: {:08x}", region.start, region.end);
+    }
 
     let mut frame_allocator =
         unsafe { memory::BootInfoFrameAllocator::init(boot_info.memory_regions) };
