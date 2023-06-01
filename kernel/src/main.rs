@@ -21,13 +21,16 @@ use crate::{
     drivers::{
         ata::available_drives,
         pci::{PCIDevice, PCI_SUBSYSTEM},
-        video::{svga::vmware_svga_2::VMWareSVGADriver, vga::graphics::GRAPHICS},
+        video::{
+            svga::vmware_svga_2::VMWareSVGADriver,
+            vga::text::{eprintln, println},
+        },
     },
     entry::BootInfo,
 };
 
-fn main() {
-    println!("Wustite version {}\n", env!("CARGO_PKG_VERSION"));
+fn start_kernel() {
+    println!("Wustite version {}", env!("CARGO_PKG_VERSION"));
 
     // let acpi_reader = ACPIReader::read(phys_mem_offset).expect("ACPI not found, cannot continue");
 
@@ -58,7 +61,12 @@ fn main() {
     }
 }
 
-fn kernel_init(boot_info: &BootInfo) {
+fn initialize_kernel(boot_info: &BootInfo) {
+    {
+        let mut serial = SERIAL0.lock();
+        serial.initialize();
+    }
+
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
 
@@ -69,23 +77,13 @@ fn kernel_init(boot_info: &BootInfo) {
         .expect("Kernel heap initialization failed");
 
     KEYBOARD_BUFFER.init();
-
-    main();
 }
 
-fn init() {
+fn initialize_platform() {
     crate::gdt::init();
     crate::interrupts::init_idt();
     unsafe { crate::interrupts::PICS.lock().initialize() };
     x86_64::instructions::interrupts::enable();
-
-    GRAPHICS.init();
-    GRAPHICS.clear_screen();
-
-    {
-        let mut serial = SERIAL0.lock();
-        serial.initialize();
-    }
 }
 
 pub fn hlt_loop() -> ! {

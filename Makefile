@@ -41,7 +41,6 @@ $(BUILD_DIR)/boot_disk.img: boot_sector bootloader kernel
 	mkfs.fat -F 12 -n "WUSTITE1" $(BUILD_DIR)/boot_disk.img
 	dd if=$(BUILD_DIR)/boot-sector.bin of=$(BUILD_DIR)/boot_disk.img conv=notrunc
 	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/kernel.o "::kernel.o"
-	mcopy -i $(BUILD_DIR)/boot_disk.img test.txt "::test.txt"
 	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/bootloader.bin "::boot.bin"
 
 # 

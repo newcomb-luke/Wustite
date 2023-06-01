@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use core::fmt::{Result, Write};
 
 use lazy_static::lazy_static;
@@ -22,7 +24,6 @@ lazy_static! {
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
-#[allow(dead_code)]
 pub enum Color {
     Black = 0,
     Blue = 1,
@@ -217,4 +218,45 @@ impl Write for TextBuffer {
         self.put_char(c);
         Ok(())
     }
+}
+
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::drivers::video::vga::text::_print(format_args!($($arg)*)));
+}
+
+macro_rules! println {
+    () => ($crate::drivers::video::vga::text::print!("\n"));
+    ($($arg:tt)*) => ($crate::drivers::video::vga::text::print!("{}\n", format_args!($($arg)*)));
+}
+
+macro_rules! eprint {
+    ($($arg:tt)*) => ($crate::drivers::video::vga::text::_eprint(format_args!($($arg)*)));
+}
+
+macro_rules! eprintln {
+    () => ($crate::drivers::video::vga::text::eprint!("\n"));
+    ($($arg:tt)*) => ($crate::drivers::video::vga::text::eprint!("{}\n", format_args!($($arg)*)));
+}
+
+pub(crate) use eprint;
+pub(crate) use eprintln;
+pub(crate) use print;
+pub(crate) use println;
+
+#[doc(hidden)]
+pub fn _print(args: core::fmt::Arguments) {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut text_buffer = TEXT_BUFFER.lock();
+        text_buffer.write_fmt(args).unwrap();
+    });
+}
+
+#[doc(hidden)]
+pub fn _eprint(args: core::fmt::Arguments) {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut text_buffer = TEXT_BUFFER.lock();
+        text_buffer.set_fg(Color::Red);
+        text_buffer.write_fmt(args).unwrap();
+        text_buffer.set_fg(Color::White);
+    });
 }

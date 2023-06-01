@@ -8,7 +8,7 @@ use core::panic::PanicInfo;
 
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
-    crate::init();
+    crate::initialize_platform();
 
     let num_memory_regions =
         unsafe { (MEMORY_REGIONS_DESCRIPTOR_ADDR as *const u8).read() as usize };
@@ -31,7 +31,9 @@ pub unsafe extern "C" fn _start() -> ! {
         physical_memory_offset: PHYS_MAP_VIRTUAL_OFFSET,
     };
 
-    crate::kernel_init(&boot_info);
+    crate::initialize_kernel(&boot_info);
+
+    crate::start_kernel();
 
     hlt_loop();
 }
