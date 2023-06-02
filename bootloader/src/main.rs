@@ -28,7 +28,7 @@ const KERNEL_MAXIUMUM_SIZE: usize = 0x5ffff;
 
 #[no_mangle]
 pub extern "C" fn bootloader_entry() -> ! {
-    let drive_number = unsafe { *DRIVE_NUM_PTR };
+    let drive_number = unsafe { DRIVE_NUM_PTR.read_volatile() };
 
     println!("Entered bootloader!");
 
@@ -41,15 +41,6 @@ pub extern "C" fn bootloader_entry() -> ! {
         println!("Failed to read disk parameters.");
         halt();
     };
-
-    // println!("Read disk parameters");
-
-    println!(
-        "max_head: {}, max_cylinder: {}, max_sector: {}",
-        boot_disk.max_head(),
-        boot_disk.max_cylinder(),
-        boot_disk.max_sector()
-    );
 
     let mut fat_driver = match FATDriver::new(boot_disk) {
         Ok(fat_driver) => fat_driver,
@@ -111,7 +102,7 @@ pub extern "C" fn bootloader_entry() -> ! {
     };
 
     // Just in case something happened to it
-    unsafe { *DRIVE_NUM_PTR = drive_number };
+    unsafe { DRIVE_NUM_PTR.write_volatile(drive_number) };
 
     let max_usable_addr = match detect_memory_regions() {
         Ok(addr) => addr,

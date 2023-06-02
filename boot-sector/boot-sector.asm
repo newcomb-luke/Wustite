@@ -47,7 +47,8 @@ _start:
     mov fs, ax
     mov gs, ax
     ; Put the stack in the top section above where we are loaded
-    mov sp, 0x7bff
+    mov sp, 0x7b00
+    mov bp, sp
 
 	; BIOS should set dl to the drive number we have booted from
 	; store it

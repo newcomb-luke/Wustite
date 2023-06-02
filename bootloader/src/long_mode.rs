@@ -61,6 +61,9 @@ pub fn is_extended_cpuid_available() -> bool {
             "jmp 4f",
             "3: mov eax, 1",
             "4: nop",
+            out("ebx") _,
+            out("ecx") _,
+            out("edx") _,
             lateout("eax") value
         );
     }
