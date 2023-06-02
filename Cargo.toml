@@ -1,5 +1,6 @@
 [workspace]
 members = ["bootloader", "kernel", "common"]
+exclude = ["modules/"]
 
 [workspace.package]
 version = "0.1.0"

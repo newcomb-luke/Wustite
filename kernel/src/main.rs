@@ -59,6 +59,11 @@ fn start_kernel() {
             }
         }
     }
+
+    if vga_driver.is_none() {
+        eprintln!("No SVGA-compatible graphics device found");
+        eprintln!("Failed to initialize graphics");
+    }
 }
 
 fn initialize_kernel(boot_info: &BootInfo) {

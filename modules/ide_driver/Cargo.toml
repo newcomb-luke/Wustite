@@ -1,0 +1,10 @@
+[package]
+name = "ide_driver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+modules_common = { path = "../modules_common" }
+
+[lib]
+crate-type = ["cdylib"]
