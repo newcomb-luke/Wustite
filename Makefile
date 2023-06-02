@@ -21,6 +21,7 @@ $(BUILD_DIR)/boot_sector.bin: always
 bootloader: $(BUILD_DIR)/bootloader.bin
 
 $(BUILD_DIR)/bootloader.bin: always FORCE
+	mkdir -p target/i686-none-eabi/
 	nasm -f elf bootloader/src/entry.asm -o target/i686-none-eabi/entry.o
 	nasm -f elf bootloader/src/bios.asm -o target/i686-none-eabi/bios.o
 	nasm -f elf bootloader/src/long_mode.asm -o target/i686-none-eabi/longmode.o
