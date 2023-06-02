@@ -190,38 +190,72 @@ impl DirEntry {
     }
 }
 
-#[repr(C, packed)]
-struct BootRecord {
-    bdb_boot_jump: [u8; 3],
-    bdb_oem_id: [u8; 8],
-    bdb_bytes_per_sector: u16,
-    bdb_sectors_per_cluster: u8,
-    bdb_reserved_sectors: u16,
-    bdb_fat_count: u8,
-    bdb_dir_entries_count: u16,
-    bdb_total_sectors: u16,
-    bdb_media_descriptor_type: u8,
-    bdb_sectors_per_fat: u16,
-    bdb_sectors_per_track: u16,
-    bdb_head_count: u16,
-    bdb_hidden_sectors: u32,
-    bdb_large_sectors: u32,
+#[derive(Clone, Copy)]
+struct BootRecordOEM([u8; 8]);
 
-    ebr_drive_number: u8,
-    __reserved: u8,
-    ebr_signature: u8,
-    ebr_volume_id: [u8; 4],
-    ebr_volume_label: FATLabel,
-    ebr_system_id: [u8; 8],
-    //
-    // code and magic number
+#[derive(Clone, Copy)]
+struct BootRecordVolumeId([u8; 4]);
+
+#[derive(Clone, Copy)]
+struct BootRecordSystemId([u8; 8]);
+
+/// Only the useful parts of the boot record
+#[derive(Clone, Copy)]
+struct BootRecord {
+    pub bdb_oem_id: BootRecordOEM,
+    pub bdb_bytes_per_sector: u16,
+    pub bdb_sectors_per_cluster: u8,
+    pub bdb_reserved_sectors: u16,
+    pub bdb_fat_count: u8,
+    pub bdb_dir_entries_count: u16,
+    pub bdb_total_sectors: u16,
+    pub bdb_sectors_per_fat: u16,
+    pub bdb_sectors_per_track: u16,
+    pub bdb_hidden_sectors: u32,
+
+    pub ebr_volume_id: BootRecordVolumeId,
+    pub ebr_volume_label: FATLabel,
+    pub ebr_system_id: BootRecordSystemId,
 }
 
-impl BootRecord {
-    fn sectors_per_fat(&self) -> u16 {
-        let sectors_per_fat_ptr = core::ptr::addr_of!(self.bdb_sectors_per_fat);
+impl From<&[u8]> for BootRecord {
+    fn from(value: &[u8]) -> Self {
+        // https://averstak.tripod.com/fatdox/bootsec.htm
 
-        unsafe { sectors_per_fat_ptr.read_unaligned() }
+        let mut bdb_oem_id = BootRecordOEM([0; 8]);
+        bdb_oem_id.0.copy_from_slice(&value[0x03..0x0B]);
+        let bdb_bytes_per_sector = u16_from_slice(&value[0x0B..0x0D]);
+        let bdb_sectors_per_cluster = value[0x0D];
+        let bdb_reserved_sectors = u16_from_slice(&value[0x0E..0x10]);
+        let bdb_fat_count = value[0x10];
+        let bdb_dir_entries_count = u16_from_slice(&value[0x11..0x13]);
+        let bdb_total_sectors = u16_from_slice(&value[0x13..0x15]);
+        let bdb_sectors_per_fat = u16_from_slice(&value[0x16..0x18]);
+        let bdb_sectors_per_track = u16_from_slice(&value[0x18..0x1A]);
+        let bdb_hidden_sectors = u32_from_slice(&value[0x1C..0x20]);
+
+        let mut ebr_volume_id = BootRecordVolumeId([0; 4]);
+        ebr_volume_id.0.copy_from_slice(&value[0x27..0x2B]);
+        let mut ebr_volume_label = FATLabel([0; 11]);
+        ebr_volume_label.0.copy_from_slice(&value[0x2B..0x36]);
+        let mut ebr_system_id = BootRecordSystemId([0; 8]);
+        ebr_system_id.0.copy_from_slice(&value[0x36..0x3E]);
+
+        Self {
+            bdb_oem_id,
+            bdb_bytes_per_sector,
+            bdb_sectors_per_cluster,
+            bdb_reserved_sectors,
+            bdb_fat_count,
+            bdb_dir_entries_count,
+            bdb_total_sectors,
+            bdb_sectors_per_fat,
+            bdb_sectors_per_track,
+            bdb_hidden_sectors,
+            ebr_volume_id,
+            ebr_volume_label,
+            ebr_system_id,
+        }
     }
 }
 
@@ -341,7 +375,7 @@ impl<'a> FATFile<'a> {
 
 pub struct FATDriver {
     disk: Disk,
-    boot_record: &'static BootRecord,
+    boot_record: BootRecord,
     fat_start_sector: u16,
     fat_size_in_sectors: u16,
     root_dir_start_sector: u16,
@@ -353,12 +387,11 @@ impl FATDriver {
     pub fn new(mut disk: Disk) -> Result<Self, DiskReadError> {
         disk.read_sector(0, FAT_DRIVER_BOOT_SECTOR_PTR)?;
 
-        let boot_record_ptr = FAT_DRIVER_BOOT_SECTOR_PTR as *const BootRecord;
+        let boot_record_buffer_slice = unsafe {
+            core::slice::from_raw_parts(FAT_DRIVER_BOOT_SECTOR_PTR as *const u8, SECTOR_SIZE)
+        };
 
-        // SAFETY: The pointer will never be null, we set it in a constant
-        //   If the disk was somehow misread, then if all the bytes are junk, well
-        //   not much we can do about that.
-        let boot_record = unsafe { boot_record_ptr.as_ref().unwrap() };
+        let boot_record = BootRecord::from(boot_record_buffer_slice);
 
         let fat_size_in_sectors =
             boot_record.bdb_fat_count as u16 * boot_record.bdb_sectors_per_fat;
@@ -449,4 +482,16 @@ impl FATDriver {
     pub fn volume_label(&self) -> &str {
         self.boot_record.ebr_volume_label.as_str()
     }
+}
+
+fn u16_from_slice(input: &[u8]) -> u16 {
+    let mut u16_buffer: [u8; 2] = [0; 2];
+    u16_buffer.copy_from_slice(input);
+    u16::from_ne_bytes(u16_buffer)
+}
+
+fn u32_from_slice(input: &[u8]) -> u32 {
+    let mut u32_buffer: [u8; 4] = [0; 4];
+    u32_buffer.copy_from_slice(input);
+    u32::from_ne_bytes(u32_buffer)
 }

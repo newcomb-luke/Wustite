@@ -9,13 +9,7 @@ pub const SECTOR_SIZE: usize = 512;
 extern "cdecl" {
     fn _BIOS_Drive_Reset(drive_number: u8) -> u16;
 
-    fn _BIOS_Drive_GetParams(
-        drive_number: u8,
-        drive_type: *mut u8,
-        max_head: *mut u8,
-        max_cylinder: *mut u16,
-        max_sector: *mut u8,
-    ) -> u16;
+    fn _BIOS_Drive_GetParams(drive_number: u8, buffer: *mut u8) -> u16;
 
     fn _BIOS_Drive_ReadSectors(
         drive_number: u8,
@@ -141,22 +135,16 @@ impl Disk {
     }
 
     pub fn from_drive(drive_number: u8) -> Result<Self, ()> {
-        let mut drive_type = 0;
-        let mut max_head = 0;
-        let mut max_cylinder = 0;
-        let mut max_sector = 0;
+        let mut buffer: [u8; 5] = [0; 5];
 
-        let success = unsafe {
-            _BIOS_Drive_GetParams(
-                drive_number,
-                core::ptr::addr_of_mut!(drive_type),
-                core::ptr::addr_of_mut!(max_head),
-                core::ptr::addr_of_mut!(max_cylinder),
-                core::ptr::addr_of_mut!(max_sector),
-            )
-        };
+        let success = unsafe { _BIOS_Drive_GetParams(drive_number, buffer.as_mut_ptr()) };
 
-        println!("head: {max_head}, cylinder: {max_cylinder}, sector: {max_sector}");
+        let drive_type = buffer[0];
+        let max_head = buffer[1];
+        let mut max_cylinder_bytes: [u8; 2] = [0; 2];
+        max_cylinder_bytes.copy_from_slice(&buffer[2..4]);
+        let max_cylinder = u16::from_ne_bytes(max_cylinder_bytes);
+        let max_sector = buffer[4];
 
         if success != 0 {
             Err(())

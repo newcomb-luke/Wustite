@@ -45,6 +45,10 @@ pmode32:
     mov ds, ax
     mov ss, ax
 
+    ; Re-initialize the stack
+    mov esp, 0x7b00
+    mov ebp, esp
+
     ; Zero the .bss section
     mov edi, __bss_start
     mov ecx, __bss_end

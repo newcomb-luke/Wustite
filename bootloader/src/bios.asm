@@ -3,7 +3,6 @@
 section .text
 
 global _BIOS_Video_WriteCharTeletype
-global _BIOS_Video_SetVideoMode
 global _BIOS_Drive_Reset
 global _BIOS_Drive_GetParams
 global _BIOS_Drive_ReadSectors
@@ -158,30 +157,6 @@ _BIOS_Video_WriteCharTeletype:
 	pop ebp
 	ret
 
-
-; args: mode
-_BIOS_Video_SetVideoMode:
-    [bits 32]
-	push ebp
-	mov ebp, esp
-
-	x86_EnterRealMode
-	[bits 16]
-
-	; [bp + 8] - mode
-	
-	; set video mode
-	mov ah, 0x00
-	mov al, [bp + 8]
-	int 0x10
-
-	x86_EnterProtectedMode
-	[bits 32]
-
-	mov esp, ebp
-	pop ebp
-	ret
-
 ; args: drive number
 ; returns 0 if successful, nonzero otherwise
 _BIOS_Drive_Reset:
@@ -199,10 +174,24 @@ _BIOS_Drive_Reset:
     stc
     int 0x13
 
+    jc .fail_real_mode
+
+.success_real_mode:
+    mov word [real_mode_error], 0
+    jmp .done_real_mode
+
+.fail_real_mode:
+    mov word [real_mode_error], 1
+
+.done_real_mode:
+
     x86_EnterProtectedMode
     [bits 32]
 
-    jc .fail
+    mov ax, [real_mode_error]
+    and ax, ax
+    jnz .fail
+
     xor eax, eax
     jmp .done
 
@@ -216,11 +205,10 @@ _BIOS_Drive_Reset:
     ret
 
 ;
-; uint16_t _cdecl _BIOS_Drive_GetParams(uint8_t driveNumber,
-;                                       uint8_t* driveType,
-;                                       uint8_t* maxHeadOut,
-;                                       uint16_t* maxCylinderOut,
-;                                       uint8_t* maxSectorOut);
+; extern "cdecl" {
+;   _BIOS_Drive_GetParams(drive_number: u8,
+;                         buffer: *mut u8) -> u16;
+; }
 ;
 _BIOS_Drive_GetParams:
     [bits 32]
@@ -233,10 +221,13 @@ _BIOS_Drive_GetParams:
     [bits 16]
 
     ; [bp + 8] - drive number
-    ; [bp + 12] - drive type ptr
-    ; [bp + 16] - max head ptr
-    ; [bp + 20] - max cylinder ptr
-    ; [bp + 24] - max sector ptr
+    ; [bp + 12] - pointer to buffer
+
+    ; buffer layout:
+    ;  u8: drive type
+    ;  u8: max head number
+    ;  u16: max cylinder number
+    ;  u8: max sector number
 
     push es
     push di
@@ -250,10 +241,23 @@ _BIOS_Drive_GetParams:
     pop di
     pop es
 
+    jc .fail_real_mode
+
+.success_real_mode:
+    mov word [real_mode_error], 0
+    jmp .done_real_mode
+
+.fail_real_mode:
+    mov word [real_mode_error], 1
+
+.done_real_mode:
+
     x86_EnterProtectedMode
     [bits 32]
 
-    jc .fail
+    mov ax, [real_mode_error]
+    and ax, ax
+    jnz .fail
 
     ; BL = drive type (AT/PS2 floppies only) (see #00242)
     ; CH = low eight bits of maximum cylinder number
@@ -264,23 +268,23 @@ _BIOS_Drive_GetParams:
 
     ; Store the drive type
     mov esi, [ebp + 12]
-    mov [esi], bl
+    mov [esi + 0], bl
 
     ; Store the max head number
-    mov esi, [ebp + 16]
-    mov [esi], dh
+    mov esi, [ebp + 12]
+    mov [esi + 1], dh
 
     ; Store the max cylinder number
     mov bl, ch
     mov bh, cl
     shr bh, 6
-    mov esi, [ebp + 20]
-    mov [esi], bx
+    mov esi, [ebp + 12]
+    mov [esi + 2], bx
 
     ; Store the max sector number
     and cl, 0b00111111 ; sector number is in bits 5-0
-    mov esi, [ebp + 24]
-    mov [esi], cl
+    mov esi, [ebp + 12]
+    mov [esi + 4], cl
 
     xor eax, eax ; success
     jmp .done
@@ -378,16 +382,31 @@ _BIOS_Drive_ReadSectors:
     pop es
     pop bx
 
+    jc .fail_real_mode
+
+.success_real_mode:
+    mov word [real_mode_error], 0
+    jmp .done_real_mode
+
+.fail_real_mode:
+    mov word [real_mode_error], 1
+
+.done_real_mode:
+
     x86_EnterProtectedMode
 
-    jnc .success
+    mov ax, [real_mode_error]
+    and ax, ax
+    jnz .fail
+
+    xor eax, eax ; success
+    jmp .done
 
 .fail:
     mov eax, 1
-    jmp .done
-.success:
-    xor eax, eax ; success
 .done:
     mov esp, ebp
     pop ebp
     ret
+
+real_mode_error: dw 0

@@ -30,12 +30,12 @@ const KERNEL_MAXIUMUM_SIZE: usize = 0x5ffff;
 pub extern "C" fn bootloader_entry() -> ! {
     let drive_number = unsafe { *DRIVE_NUM_PTR };
 
+    println!("Entered bootloader!");
+
     if !is_cpuid_available() || !is_extended_cpuid_available() {
         println!("Kernel requires x86_64.");
         halt();
     }
-
-    println!("Hello from bootloader!");
 
     let Ok(boot_disk) = Disk::from_drive(drive_number) else {
         println!("Failed to read disk parameters.");
@@ -43,6 +43,13 @@ pub extern "C" fn bootloader_entry() -> ! {
     };
 
     // println!("Read disk parameters");
+
+    println!(
+        "max_head: {}, max_cylinder: {}, max_sector: {}",
+        boot_disk.max_head(),
+        boot_disk.max_cylinder(),
+        boot_disk.max_sector()
+    );
 
     let mut fat_driver = match FATDriver::new(boot_disk) {
         Ok(fat_driver) => fat_driver,
@@ -115,6 +122,8 @@ pub extern "C" fn bootloader_entry() -> ! {
     };
 
     identity_map_mem(max_usable_addr);
+
+    halt();
 
     enter_long_mode(entry_point);
 }

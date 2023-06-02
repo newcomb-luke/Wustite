@@ -22,7 +22,6 @@ pub fn is_cpuid_available() -> bool {
 
     unsafe {
         asm!(
-            "push ecx",
             "pushfd",
             "pop eax",
             "mov ecx, eax",
@@ -40,8 +39,9 @@ pub fn is_cpuid_available() -> bool {
             "xor eax, eax",
             "jmp 4f",
             "3: mov eax, 1",
-            "4: pop ecx",
-            lateout("eax") value
+            "4: nop",
+            out("ecx") _,
+            lateout("eax") value,
         );
     }
 
