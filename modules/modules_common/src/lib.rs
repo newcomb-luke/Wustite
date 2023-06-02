@@ -1,7 +1,5 @@
 #![no_std]
 
-#[derive(Clone, Copy)]
-#[repr(u8)]
-pub enum DriverType {
-    PCIDriver = 0,
+extern "Rust" {
+    pub fn _log_str(s: &str);
 }

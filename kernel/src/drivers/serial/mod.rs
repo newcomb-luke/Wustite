@@ -149,6 +149,14 @@ pub fn _log(args: core::fmt::Arguments) {
     });
 }
 
+#[doc(hidden)]
+pub fn _log_str(s: &str) {
+    x86_64::instructions::interrupts::without_interrupts(|| {
+        let mut port = SERIAL0.lock();
+        port.write_str(s).unwrap();
+    });
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BaudRate {
     Baud115200,

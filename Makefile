@@ -1,6 +1,6 @@
-.PHONY: all disk_image boot_sector bootloader clean always kernel
+.PHONY: all disk_image boot_sector bootloader clean always kernel modules
 
-all: boot_components disk_image kernel
+all: boot_components disk_image kernel modules
 
 TARGET_ASM=nasm
 
@@ -37,12 +37,13 @@ $(BUILD_DIR)/bootloader.bin: always FORCE
 
 disk_image: $(BUILD_DIR)/boot_disk.img
 
-$(BUILD_DIR)/boot_disk.img: boot_sector bootloader kernel
+$(BUILD_DIR)/boot_disk.img: boot_sector bootloader kernel modules
 	dd if=/dev/zero of=$(BUILD_DIR)/boot_disk.img bs=512 count=2880
 	mkfs.fat -F 12 -n "WUSTITE1" $(BUILD_DIR)/boot_disk.img
 	dd if=$(BUILD_DIR)/boot-sector.bin of=$(BUILD_DIR)/boot_disk.img conv=notrunc
 	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/kernel.o "::kernel.o"
 	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/bootloader.bin "::boot.bin"
+	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/libide_driver.so "::libide.so"
 
 # 
 # Kernel
@@ -52,6 +53,16 @@ kernel: $(BUILD_DIR)/kernel.o
 $(BUILD_DIR)/kernel.o: always FORCE
 	RUSTFLAGS="-C code-model=kernel -C relocation-model=static" cargo build --release -Z build-std=core,alloc --target=x86_64-none-eabi.json --package=kernel
 	cp target/x86_64-none-eabi/release/kernel $(BUILD_DIR)/kernel.o
+
+#
+# Kernel modules
+#
+modules: $(BUILD_DIR)/ide_driver.so
+
+$(BUILD_DIR)/ide_driver.so: 
+	cd modules/ide_driver && \
+	RUSTFLAGS="-C code-model=kernel -C relocation-model=pic" cargo build --release -Z build-std=core --target=../../x86_64-none-eabi.json && \
+	cp target/x86_64-none-eabi/release/libide_driver.so $(BUILD_DIR)/libide_driver.so
 
 FORCE: ;
 

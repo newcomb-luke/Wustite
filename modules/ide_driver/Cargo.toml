@@ -8,3 +8,15 @@ modules_common = { path = "../modules_common" }
 
 [lib]
 crate-type = ["cdylib"]
+
+[profile.dev]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
+
+[profile.release]
+panic = "abort"
+opt-level = "z"
+lto = true
+codegen-units = 1
