@@ -1,4 +1,8 @@
+use core::arch::asm;
+
 use common::{ALL_PAGE_TABLES_END_ADDR, PAGE_MAP_LEVEL_4_TABLE_START_ADDR, PAGE_SIZE};
+
+use crate::{print, println};
 
 const MEMORY_REGIONS_DESCRIPTOR_ADDR: *mut u8 = 0x1000 as *mut u8;
 const MEMORY_REGIONS_START_ADDR: *mut u64 = 0x1010 as *mut u64;
@@ -9,11 +13,6 @@ const KERNEL_EXECUTE_LOCATION: u64 = 0x00100000;
 const KERNEL_EXECUTE_SIZE: u64 = 0x00200000;
 const KERNEL_STACK_LOCATION: u64 = 0x00300000;
 const KERNEL_STACK_SIZE: u64 = 0x00100000;
-
-#[link(name = "bios")]
-extern "cdecl" {
-    fn _BIOS_Memory_GetNextSegment(entry: *mut [u8; 24], continuation_id: *mut u32) -> i32;
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SMAPEntryType {
@@ -49,34 +48,6 @@ struct SMAPEntry {
 impl SMAPEntry {
     pub fn end(&self) -> u64 {
         (self.base + self.length) - 1
-    }
-}
-
-impl From<[u8; 24]> for SMAPEntry {
-    fn from(value: [u8; 24]) -> Self {
-        let mut base_bytes: [u8; 8] = [0; 8];
-        base_bytes.copy_from_slice(&value[0..8]);
-
-        let mut length_bytes: [u8; 8] = [0; 8];
-        length_bytes.copy_from_slice(&value[8..16]);
-
-        let mut entry_type_bytes: [u8; 4] = [0; 4];
-        entry_type_bytes.copy_from_slice(&value[16..20]);
-
-        let mut acpi_bytes: [u8; 4] = [0; 4];
-        acpi_bytes.copy_from_slice(&value[20..24]);
-
-        let base = u64::from_ne_bytes(base_bytes);
-        let length = u64::from_ne_bytes(length_bytes);
-        let entry_type_raw = u32::from_ne_bytes(entry_type_bytes);
-        let acpi = u32::from_ne_bytes(acpi_bytes);
-
-        SMAPEntry {
-            base,
-            length,
-            entry_type: entry_type_raw.into(),
-            _acpi: acpi,
-        }
     }
 }
 
@@ -225,13 +196,6 @@ impl MemoryRegionsDescriptor {
 
     fn unify_regions(&mut self, smap_entries: SMAPEntries) -> Result<(), MemoryDetectionError> {
         for entry in smap_entries.sorted() {
-            // println!(
-            //     "Start: {:016x}, end: {:016x}, type: {:?}",
-            //     entry.base,
-            //     entry.end(),
-            //     entry.entry_type
-            // );
-
             if entry.entry_type == SMAPEntryType::Usable {
                 let usable = MemoryRegion {
                     start: entry.base,
@@ -307,6 +271,7 @@ impl SMAPEntriesReader {
         }
     }
 
+    #[inline(never)]
     fn next(&mut self) -> Result<Option<SMAPEntry>, MemoryDetectionError> {
         if !self.first && (self.bytes_read <= 0 || self.continuation_id == 0) {
             return Ok(None);
@@ -316,12 +281,46 @@ impl SMAPEntriesReader {
         let mut buffer: [u8; 24] = [0; 24];
 
         self.bytes_read =
-            unsafe { _BIOS_Memory_GetNextSegment(&mut buffer, &mut self.continuation_id) };
+            unsafe { bios_get_next_segment(buffer.as_mut_ptr(), &mut self.continuation_id) };
+        // unsafe { _BIOS_Memory_GetNextSegment(&mut buffer, &mut self.continuation_id) };
+
+        // I really have no idea what the problem is, but we need to do this
+        // in order for Rust to know to initially set the values to zero, otherwise
+        // it just leaves whatever was in stack memory in there, and only copies
+        // in the lower half of the u64's
+        let mut output = SMAPEntry {
+            base: 0,
+            length: 0,
+            entry_type: SMAPEntryType::Reserved,
+            _acpi: 1,
+        };
+
+        let mut base_bytes: [u8; 8] = [0; 8];
+        base_bytes.copy_from_slice(&buffer[0..8]);
+
+        let mut length_bytes: [u8; 8] = [0; 8];
+        length_bytes.copy_from_slice(&buffer[8..16]);
+
+        let mut entry_type_bytes: [u8; 4] = [0; 4];
+        entry_type_bytes.copy_from_slice(&buffer[16..20]);
+
+        let mut acpi_bytes: [u8; 4] = [0; 4];
+        acpi_bytes.copy_from_slice(&buffer[20..24]);
+
+        let base = u64::from_ne_bytes(base_bytes);
+        let length = u64::from_ne_bytes(length_bytes);
+        let entry_type_raw = u32::from_ne_bytes(entry_type_bytes);
+        let acpi = u32::from_ne_bytes(acpi_bytes);
+
+        output.base = base;
+        output.length = length;
+        output.entry_type = entry_type_raw.into();
+        output._acpi = acpi;
 
         if self.bytes_read < 0 {
             Err(MemoryDetectionError::BIOSError)
         } else {
-            Ok(Some(buffer.into()))
+            Ok(Some(output))
         }
     }
 }
@@ -337,12 +336,9 @@ impl SMAPEntries {
             return Err(MemoryDetectionError::TooManyRegionsError);
         }
 
-        let next_entry_addr = if self.num_entries() == 0 {
-            SMAP_ENTRIES_START
-        } else {
-            unsafe { SMAP_ENTRIES_START.add(self.num_entries) }
-        };
-        unsafe { next_entry_addr.write(entry) };
+        let next_entry_addr = unsafe { SMAP_ENTRIES_START.add(self.num_entries) };
+        unsafe { next_entry_addr.write_volatile(entry) };
+
         self.num_entries += 1;
 
         Ok(())
@@ -504,4 +500,95 @@ pub fn detect_memory_regions() -> Result<u64, MemoryDetectionError> {
     memory_regions_descriptor.unify_regions(smap_entries)?;
 
     Ok(memory_regions_descriptor.get_max_usable_addr())
+}
+
+// It breaks for some reason if we don't do inline(never) :)
+#[inline(never)]
+unsafe fn bios_get_next_segment(entry: *mut u8, continuation_id: *mut u32) -> i32 {
+    // Why we have to use AT&T syntax:
+    // https://www.reddit.com/r/rust/comments/o8lrz8/how_do_i_get_a_far_absolute_jump_with_inline/
+
+    // Clear interrupts and enter 16-bit protected mode segment
+    asm!(
+        ".code32",
+        "cli",
+        "ljmp $0x18, $2f",
+        "2:",
+        options(att_syntax)
+    );
+
+    // Disable protected mode bit from cr0
+    asm!(
+        ".code16",
+        "mov eax, cr0",
+        "and al, ~1",
+        "mov cr0, eax",
+        out("eax") _
+    );
+
+    // Enter 16-bit real mode segment
+    asm!(".code16", "ljmp $0x00, $2f", "2:", options(att_syntax));
+
+    // Set up real mode segments and re-enable interrupts
+    asm!(
+        ".code16",
+        "xor ax, ax",
+        "mov ds, ax",
+        "mov ss, ax",
+        "mov es, ax",
+        "mov fs, ax",
+        "mov gs, ax",
+        "sti",
+        out("eax") _
+    );
+
+    let success: i32;
+
+    asm!(
+        ".code16",
+        "mov ebx, [{1:e}]",
+        "mov edx, 0x534D4150",
+        "mov edi, {0:e}",
+        "mov ecx, 24",
+        "mov eax, 0x0000E820",
+        "int 0x15",
+        "jc 2f",
+        "mov edx, 0x534D4150",
+        "cmp eax, edx",
+        "jne 2f",
+        "mov eax, ecx",
+        "mov [{1:e}], ebx",
+        "jmp 3f",
+        "2: mov eax, -1",
+        "3: ",
+        in(reg) entry,
+        in(reg) continuation_id,
+        lateout("eax") success,
+        out("ebx") _,
+        out("ecx") _,
+        out("edx") _
+    );
+
+    asm!(
+        ".code16",
+        "cli",
+        "mov eax, cr0",
+        "or al, 1",
+        "mov cr0, eax",
+        out("eax") _
+    );
+
+    asm!(".code16", "ljmp $0x08, $2f", "2: ", options(att_syntax));
+
+    asm!(
+        ".code32",
+        "mov ax, 0x10",
+        "mov ds, ax",
+        "mov ss, ax",
+        "mov es, ax",
+        "mov fs, ax",
+        "mov gs, ax",
+    );
+
+    success
 }

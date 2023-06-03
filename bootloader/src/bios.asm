@@ -27,6 +27,9 @@ global _BIOS_Drive_ReadSectors
     xor ax, ax
     mov ds, ax
     mov ss, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
 
     ; Re-enable interrupts
     sti
@@ -48,6 +51,9 @@ global _BIOS_Drive_ReadSectors
     mov ax, 0x10 ; Offset 16 into the GDT
     mov ds, ax
     mov ss, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
 %endmacro
 
 ; Convert linear address to real mode segment address
@@ -82,14 +88,13 @@ _BIOS_Memory_GetNextSegment:
 	push edx
 	push esi
 	push edi
-	push ds
-	push es
 
-    LinearToSegmentOffset [bp + 12], ds, esi, si
-    mov ebx, [ds:si]
+    mov ebx, [bp + 12]
     ; Magic number that says, yes we want this data
     mov edx, 0x534D4150
-    LinearToSegmentOffset [bp + 8], es, edi, di
+    mov di, [bp + 8]
+    mov ax, 0
+    mov es, ax
     mov [es:di + 20], dword 1	; force a valid ACPI 3.X entry
     mov ecx, 24
     mov eax, 0x0000E820
@@ -107,10 +112,8 @@ _BIOS_Memory_GetNextSegment:
     ; ecx contains the number of bytes read into our structure
     mov eax, ecx
     ; Set our continuation id value
-    mov [ds:si], ebx
+    mov [bp + 12], ebx
 .done:
-    pop es
-    pop ds
     pop edi
     pop esi
     pop edx

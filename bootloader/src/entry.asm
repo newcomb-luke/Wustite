@@ -12,7 +12,9 @@ entry:
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, 0x7b00
+    mov fs, ax,
+    mov gs, ax
+    mov sp, 0x7c00
     mov bp, sp
 
     ; Enable the A20 line
@@ -44,9 +46,12 @@ pmode32:
     mov ax, 0x10 ; Offset 16 into the GDT
     mov ds, ax
     mov ss, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
 
     ; Re-initialize the stack
-    mov esp, 0x7b00
+    mov esp, 0x7c00
     mov ebp, esp
 
     ; Zero the .bss section
