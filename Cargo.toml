@@ -7,16 +7,25 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 
-[profile.dev]
-panic = "abort"
-opt-level = "z"
+# https://github.com/rust-lang/rust/issues/112245#issuecomment-1575052849
+# https://doc.rust-lang.org/cargo/reference/profiles.html#overrides
+# ^ otherwise would enable lto here
+[profile.dev.package.bootloader-uefi]
+opt-level = 3
 strip = true
-# lto = true
 codegen-units = 1
 
-[profile.release]
-panic = "abort"
+[profile.release.package.bootloader-uefi]
+opt-level = 3
+strip = true
+codegen-units = 1
+
+[profile.dev.package.kernel]
 opt-level = "z"
 strip = true
-# lto = true
+codegen-units = 1
+
+[profile.release.package.kernel]
+opt-level = "z"
+strip = true
 codegen-units = 1

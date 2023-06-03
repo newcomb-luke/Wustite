@@ -6,12 +6,20 @@ use uefi::{
     proto::{
         loaded_image::LoadedImage,
         media::{
-            file::{File, FileAttribute, FileMode},
+            file::{Directory, File, FileAttribute, FileMode},
             fs::SimpleFileSystem,
         },
     },
+    CStr16,
 };
 use uefi_services::println;
+
+use crate::filesystem::find_file;
+
+mod filesystem;
+
+const KERNEL_PATH: &str = "KERNEL.O";
+const INITRAMFS_PATH: &str = "INITRAMF.IMG";
 
 #[entry]
 fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
@@ -23,30 +31,15 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     println!("Bootloader started!");
 
-    open_boot_fs(boot_services).unwrap();
+    let kernel_file = find_file(KERNEL_PATH, boot_services).unwrap();
+
+    println!("Found {}", KERNEL_PATH);
+
+    let initramfs_file = find_file(INITRAMFS_PATH, boot_services).unwrap();
+
+    println!("Found {}", INITRAMFS_PATH);
 
     system_table.boot_services().stall(10_000_000);
+
     Status::SUCCESS
-}
-
-fn open_boot_fs(boot_services: &BootServices) -> uefi::Result {
-    let loaded_image =
-        boot_services.open_protocol_exclusive::<LoadedImage>(boot_services.image_handle())?;
-
-    let mut volume_handle =
-        boot_services.open_protocol_exclusive::<SimpleFileSystem>(loaded_image.device())?;
-
-    let mut volume = volume_handle.open_volume()?;
-
-    let mut file_handle = volume.open(
-        cstr16!("BOOTX64.EFI"),
-        FileMode::Read,
-        FileAttribute::empty(),
-    )?;
-
-    if file_handle.is_regular_file()? {
-        println!("Yep, that's a regular old file.");
-    }
-
-    Ok(())
 }

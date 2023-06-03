@@ -21,7 +21,7 @@ BOOTLOADER_TARGET_NAME=x86_64-unknown-uefi
 BOOTLOADER_TARGET=$(BOOTLOADER_TARGET_NAME)
 BOOTLOADER_OUTPUT=$(TARGET_DIR)/$(BOOTLOADER_TARGET)/release/bootloader-uefi.efi
 
-KERNEL_RUST_FLAGS=-C code-model=kernel -C relocation-model=static
+KERNEL_RUST_FLAGS=-C code-model=kernel -C relocation-model=pic
 KERNEL_BUILD_STD=core,alloc
 KERNEL_TARGET=x86_64-none-eabi
 KERNEL_TARGET_NAME=$(KERNEL_TARGET).json
@@ -91,9 +91,10 @@ $(BUILD_DIR)/kernel.o: bootloader FORCE
 
 initramfs: $(INITRAMFS)
 
-$(INITRAMFS):
+$(INITRAMFS): efi_partition
 	dd if=/dev/zero of=$(INITRAMFS) bs=512 count=$(INITRAMFS_SIZE)
 	mkfs.fat -F 16 -n "INITRAMF" $(INITRAMFS)
+	mcopy -i $(UEFI_PARTITION) $(INITRAMFS) "::INITRAMF.IMG" -o
 
 #
 # Kernel modules
