@@ -1,24 +1,9 @@
 #![allow(dead_code)]
 
-use crate::{
-    bios::{bios_drive_get_params, bios_drive_read_sectors, bios_drive_reset},
-    println,
-};
+use crate::bios::{bios_drive_get_params, bios_drive_read_sectors, bios_drive_reset};
 
 const DISK_DRIVER_READ_BUFFER: *mut u8 = 0x00007E00 as *mut u8;
 pub const SECTOR_SIZE: usize = 512;
-
-#[link(name = "bios")]
-extern "cdecl" {
-    fn _BIOS_Drive_ReadSectors(
-        drive_number: u8,
-        head: u8,
-        cylinder: u16,
-        sector: u8,
-        sector_count: u8,
-        data_destination: *mut u8,
-    ) -> u16;
-}
 
 #[derive(Debug, Clone, Copy)]
 pub enum DiskReadError {

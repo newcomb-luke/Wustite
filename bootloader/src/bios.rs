@@ -121,20 +121,18 @@ pub unsafe fn bios_write_char_teletype(c: u8) {
 
     asm!(
         ".code16",
-        "mov ecx, ebp",
-        "mov ah, 0x0e",
         "mov al, {}",
+        "mov ah, 0x0e",
         "xor bx, bx",
         "int 0x10",
-        "mov ebp, ecx",
         in(reg_byte) c,
         out("eax") _,
         out("ebx") _,
-        // Apparently some BIOSes can clobber ebp, so we use this as an intermediate
-        out("ecx") _
     );
 
     enter_32_bit_protected_mode!();
+
+    asm!("nop");
 }
 
 #[inline(never)]
@@ -231,13 +229,12 @@ pub unsafe fn bios_drive_get_params(drive_number: u8, buffer: *mut u8) -> i32 {
         buffer.add(1).write(max_head);
 
         // Calculate and store the max cylinder number
-        let mut max_cylinder = 0;
-        max_cylinder = (ch as u16) >> 8;
+        let mut max_cylinder = (ch as u16) >> 8;
         // Top 2 bits of the max cylinder number are in cl
         max_cylinder |= ((cl as u16) & 0b11000000) >> 6;
 
         // Let's do this the safe way
-        let mut max_cylinder_bytes = max_cylinder.to_ne_bytes();
+        let max_cylinder_bytes = max_cylinder.to_ne_bytes();
         buffer.copy_from(max_cylinder_bytes.as_ptr(), 2);
 
         // Get and store the max sector number
@@ -266,18 +263,12 @@ pub unsafe fn bios_drive_read_sectors(
     let cylinder_low = (cylinder & 0x00FF) as u8;
 
     // Sectors get chopped off too
-    let cl = (cylinder_high << 6) | (sector & 0b00011111);
+    let cl = (cylinder_high << 6) | (sector & 0b00111111);
 
     enter_16_bit_real_mode!();
 
     asm!(
         ".code16",
-        "mov dl, {0}",
-        "mov ch {1}",
-        "mov cl, {2}",
-        "mov dh, {3}",
-        "mov al, {4}",
-        "mov bx, {5:x}",
         "mov ah, 0x02",
         "stc",
         "int 0x13",
@@ -289,16 +280,16 @@ pub unsafe fn bios_drive_read_sectors(
         "2: mov eax, 1",
         // Done
         "3:",
-        in(reg_byte) drive_number,
-        in(reg_byte) cylinder_low,
-        in(reg_byte) cl,
-        in(reg_byte) head,
-        in(reg_byte) num_sectors,
-        in(reg) data_destination,
+        in("dl") drive_number,
+        in("ch") cylinder_low,
+        in("cl") cl,
+        in("dh") head,
+        in("al") num_sectors,
+        in("bx") data_destination,
+        lateout("eax") success,
         lateout("ebx") _,
         lateout("ecx") _,
         lateout("edx") _,
-        lateout("eax") success
     );
 
     enter_32_bit_protected_mode!();

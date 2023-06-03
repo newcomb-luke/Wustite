@@ -37,7 +37,6 @@ pub enum FATDriverError {
 }
 
 #[derive(Clone, Copy)]
-#[repr(C, packed)]
 struct FATLabel([u8; 11]);
 
 impl FATLabel {
