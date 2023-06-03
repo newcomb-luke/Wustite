@@ -122,27 +122,6 @@ _BIOS_Drive_ReadSectors:
     ; Set destination data buffer
     LinearToSegmentOffset [bp + 28], es, ebx, bx
 
-    ; mov bx, [bp + 16]
-
-    ; mov bl, bh
-    ; call ___print_hex
-    ; mov bx, [bp + 16]
-    ; and bx, 0x0F
-    ; call ___print_hex
-    ; mov bx, [bp + 16]
-
-    ; mov es, bx
-    ; mov bx, [bp + 14]
-
-    ; mov bl, bh
-    ; call ___print_hex
-    ; mov bx, [bp + 14]
-    ; and bx, 0x0F
-    ; call ___print_hex
-    ; mov bx, [bp + 14]
-
-	; jmp $
-
     mov ah, 0x02
     stc
     int 0x13

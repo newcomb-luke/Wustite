@@ -248,96 +248,101 @@ pub unsafe fn bios_drive_get_params(drive_number: u8, buffer: *mut u8) -> i32 {
     success
 }
 
-// ; extern "cdecl" {
-// ;   _BIOS_Drive_GetParams(drive_number: u8,
-// ;                         buffer: *mut u8) -> u16;
-// ; }
-// ;
-// _BIOS_Drive_GetParams:
+#[inline(never)]
+#[link_section = ".bios"]
+/// Returns 0 if successful, nonzero otherwise
+pub unsafe fn bios_drive_read_sectors(
+    drive_number: u8,
+    head: u8,
+    cylinder: u16,
+    sector: u8,
+    num_sectors: u8,
+    data_destination: *mut u8,
+) -> i32 {
+    let success: i32;
+
+    // Yeah, too bad, it gets chopped off
+    let cylinder_high = ((cylinder >> 8) & 0b11) as u8;
+    let cylinder_low = (cylinder & 0x00FF) as u8;
+
+    // Sectors get chopped off too
+    let cl = (cylinder_high << 6) | (sector & 0b00011111);
+
+    enter_16_bit_real_mode!();
+
+    asm!(
+        ".code16",
+        "mov dl, {0}",
+        "mov ch {1}",
+        "mov cl, {2}",
+        "mov dh, {3}",
+        "mov al, {4}",
+        "mov bx, {5:x}",
+        "mov ah, 0x02",
+        "stc",
+        "int 0x13",
+        "jc 2f",
+        // Success
+        "xor eax, eax",
+        "jmp 3f",
+        // Failure
+        "2: mov eax, 1",
+        // Done
+        "3:",
+        in(reg_byte) drive_number,
+        in(reg_byte) cylinder_low,
+        in(reg_byte) cl,
+        in(reg_byte) head,
+        in(reg_byte) num_sectors,
+        in(reg) data_destination,
+        lateout("ebx") _,
+        lateout("ecx") _,
+        lateout("edx") _,
+        lateout("eax") success
+    );
+
+    enter_32_bit_protected_mode!();
+
+    success
+}
+
+// _BIOS_Drive_ReadSectors:
 //     [bits 32]
 //     push ebp
 //     mov ebp, esp
-//     push ebx
-//     push esi
 //
 //     x86_EnterRealMode
-//     [bits 16]
 //
-//     ; [bp + 8] - drive number
-//     ; [bp + 12] - pointer to buffer
-//
-//     ; buffer layout:
-//     ;  u8: drive type
-//     ;  u8: max head number
-//     ;  u16: max cylinder number
-//     ;  u8: max sector number
-//
+//     push bx
 //     push es
-//     push di
-//     ; ES:DI = 0x0000:0x0000
-//     xor di, di
-//     mov es, di
-//     mov ah, 0x08
+//
+//     ; Set drive number
 //     mov dl, [bp + 8]
+//
+//     ; Set cylinder number
+//     mov ch, [bp + 16]
+//     mov cl, [bp + 18]
+//     shl cl, 6
+//
+//     ; Set head number
+//     mov dh, [bp + 12]
+//
+//     ; Set sector number
+//     mov al, [bp + 20]
+//     and al, 0b00111111 ; Clear top bits of sector number
+//     or cl, al
+//
+//     ; Set number of sectors to read
+//     mov al, [bp + 24]
+//
+//     ; Set destination data buffer
+//     LinearToSegmentOffset [bp + 28], es, ebx, bx
+//
+//     mov ah, 0x02
 //     stc
 //     int 0x13
-//     pop di
+//
 //     pop es
+//     pop bx
 //
 //     jc .fail_real_mode
-//
-// .success_real_mode:
-//     mov word [real_mode_error], 0
-//     jmp .done_real_mode
-//
-// .fail_real_mode:
-//     mov word [real_mode_error], 1
-//
-// .done_real_mode:
-//
-//     x86_EnterProtectedMode
-//     [bits 32]
-//
-//     mov ax, [real_mode_error]
-//     and ax, ax
-//     jnz .fail
-//
-//     ; BL = drive type (AT/PS2 floppies only) (see #00242)
-//     ; CH = low eight bits of maximum cylinder number
-//     ; CL = maximum sector number (bits 5-0)
-//     ; high two bits of maximum cylinder number (bits 7-6)
-//     ; DH = maximum head number
-//     ; DL = number of drives
-//
-//     ; Store the drive type
-//     mov esi, [ebp + 12]
-//     mov [esi + 0], bl
-//
-//     ; Store the max head number
-//     mov esi, [ebp + 12]
-//     mov [esi + 1], dh
-//
-//     ; Store the max cylinder number
-//     mov bl, ch
-//     mov bh, cl
-//     shr bh, 6
-//     mov esi, [ebp + 12]
-//     mov [esi + 2], bx
-//
-//     ; Store the max sector number
-//     and cl, 0b00111111 ; sector number is in bits 5-0
-//     mov esi, [ebp + 12]
-//     mov [esi + 4], cl
-//
-//     xor eax, eax ; success
-//     jmp .done
-//
-// .fail:
-//     mov eax, 1
-//
-// .done:
-//     pop esi
-//     pop ebx
-//     mov esp, ebp
-//     pop ebp
-//     ret

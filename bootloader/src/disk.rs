@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::{
-    bios::{bios_drive_get_params, bios_drive_reset},
+    bios::{bios_drive_get_params, bios_drive_read_sectors, bios_drive_reset},
     println,
 };
 
@@ -116,7 +116,7 @@ impl Disk {
 
     fn bios_read_sector(&mut self, chs: CHS) -> Result<(), ()> {
         let success = unsafe {
-            _BIOS_Drive_ReadSectors(
+            bios_drive_read_sectors(
                 self.drive_number,
                 chs.head,
                 chs.cylinder,
