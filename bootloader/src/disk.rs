@@ -1,16 +1,15 @@
 #![allow(dead_code)]
 
-use crate::println;
+use crate::{
+    bios::{bios_drive_get_params, bios_drive_reset},
+    println,
+};
 
 const DISK_DRIVER_READ_BUFFER: *mut u8 = 0x00007E00 as *mut u8;
 pub const SECTOR_SIZE: usize = 512;
 
 #[link(name = "bios")]
 extern "cdecl" {
-    fn _BIOS_Drive_Reset(drive_number: u8) -> u16;
-
-    fn _BIOS_Drive_GetParams(drive_number: u8, buffer: *mut u8) -> u16;
-
     fn _BIOS_Drive_ReadSectors(
         drive_number: u8,
         head: u8,
@@ -64,7 +63,7 @@ impl Disk {
     }
 
     pub fn reset(&mut self) -> Result<(), ()> {
-        let success = unsafe { _BIOS_Drive_Reset(self.drive_number) };
+        let success = unsafe { bios_drive_reset(self.drive_number) };
 
         if success == 0 {
             Ok(())
@@ -137,7 +136,7 @@ impl Disk {
     pub fn from_drive(drive_number: u8) -> Result<Self, ()> {
         let mut buffer: [u8; 5] = [0; 5];
 
-        let success = unsafe { _BIOS_Drive_GetParams(drive_number, buffer.as_mut_ptr()) };
+        let success = unsafe { bios_drive_get_params(drive_number, buffer.as_mut_ptr()) };
 
         let drive_type = buffer[0];
         let max_head = buffer[1];

@@ -80,8 +80,7 @@ clean:
 	rm -rf build
 
 run: $(BUILD_DIR)/boot_disk.img
-# qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on -device vmware-svga -m 2G -drive if=ide,format=raw,file=$(BUILD_DIR)/boot_disk.img
-	qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on -device vmware-svga -m 2G -fda $(BUILD_DIR)/boot_disk.img
+	qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on -device vmware-svga -m 2G -drive if=ide,format=raw,file=$(BUILD_DIR)/boot_disk.img
 
 debug: $(BUILD_DIR)/boot_disk.img
 	bochs -f bochs.cfg -q
