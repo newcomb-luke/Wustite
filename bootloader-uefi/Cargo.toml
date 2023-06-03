@@ -1,0 +1,8 @@
+[package]
+name = "bootloader-uefi"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+uefi = "0.22"
+uefi-services = "0.19"

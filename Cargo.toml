@@ -1,5 +1,5 @@
 [workspace]
-members = ["bootloader", "kernel", "common"]
+members = ["bootloader", "bootloader-uefi", "kernel", "common"]
 exclude = ["modules/"]
 resolver = "2"
 
@@ -11,12 +11,12 @@ edition = "2021"
 panic = "abort"
 opt-level = "z"
 strip = true
-lto = true
+# lto = true
 codegen-units = 1
 
 [profile.release]
 panic = "abort"
 opt-level = "z"
 strip = true
-lto = true
+# lto = true
 codegen-units = 1

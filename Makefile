@@ -1,33 +1,30 @@
-.PHONY: all disk_image boot_sector bootloader clean always kernel initramfs modules
+.PHONY: all disk_image efi_partition bootloader clean always kernel initramfs modules firmware
 
-all: boot_components disk_image kernel initramfs modules
-
-TARGET_ASM=nasm
+all: efi_partition bootloader disk_image kernel initramfs modules firmware
 
 BUILD_DIR=$(abspath build)
-KERNEL_BASE_DIR=$(abspath kernel)
 
 #
-# Boot components
+# Bootloader
 #
 
-boot_components: boot_sector bootloader
+bootloader: $(BUILD_DIR)/BOOTX64.EFI
 
-boot_sector: $(BUILD_DIR)/boot_sector.bin
+$(BUILD_DIR)/BOOTX64.EFI: always FORCE
+	cargo build --release -Zbuild-std=core,compiler_builtins --target x86_64-unknown-uefi --package=bootloader-uefi
+	cp target/x86_64-unknown-uefi/release/bootloader-uefi.efi $(BUILD_DIR)/BOOTX64.EFI
 
-$(BUILD_DIR)/boot_sector.bin: always
-	nasm -fbin boot-sector/boot-sector.asm -o $(BUILD_DIR)/boot-sector.bin
+#
+# EFI partition
+#
+efi_partition: $(BUILD_DIR)/uefi-partition.img
 
-bootloader: $(BUILD_DIR)/bootloader.bin
-
-$(BUILD_DIR)/bootloader.bin: always FORCE
-	mkdir -p target/i686-none-eabi/
-	nasm -f elf bootloader/src/entry.asm -o target/i686-none-eabi/entry.o
-	nasm -f elf bootloader/src/long_mode.asm -o target/i686-none-eabi/longmode.o
-	ar rcs bootloader/libentry.a target/i686-none-eabi/entry.o
-	ar rcs bootloader/liblongmode.a target/i686-none-eabi/longmode.o
-	cargo build --release -Z build-std=core --target=i686-none-eabi.json --package=bootloader
-	objcopy -I elf32-i386 -O binary target/i686-none-eabi/release/bootloader $(BUILD_DIR)/bootloader.bin
+$(BUILD_DIR)/uefi-partition.img: bootloader
+	dd if=/dev/zero of=$(BUILD_DIR)/uefi-partition.img bs=512 count=91669
+	mformat -i $(BUILD_DIR)/uefi-partition.img -h 32 -t 32 -n 64 -c 1
+	mmd -i $(BUILD_DIR)/uefi-partition.img ::EFI
+	mmd -i $(BUILD_DIR)/uefi-partition.img ::EFI/BOOT
+	mcopy -i $(BUILD_DIR)/uefi-partition.img $(BUILD_DIR)/BOOTX64.EFI ::EFI/BOOT
 
 #
 # Disk image
@@ -35,13 +32,22 @@ $(BUILD_DIR)/bootloader.bin: always FORCE
 
 disk_image: $(BUILD_DIR)/boot_disk.img
 
-$(BUILD_DIR)/boot_disk.img: boot_sector bootloader kernel initramfs modules
-	dd if=/dev/zero of=$(BUILD_DIR)/boot_disk.img bs=512 count=2880
-	mkfs.fat -F 12 -n "WUSTITE1" $(BUILD_DIR)/boot_disk.img
-	dd if=$(BUILD_DIR)/boot-sector.bin of=$(BUILD_DIR)/boot_disk.img conv=notrunc
-	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/kernel.o "::kernel.o"
-	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/bootloader.bin "::boot.bin"
-	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/ramfs.bin "::ramfs.bin"
+$(BUILD_DIR)/boot_disk.img: efi_partition kernel initramfs modules
+	dd if=/dev/zero of=$(BUILD_DIR)/boot_disk.img bs=512 count=93750
+	parted $(BUILD_DIR)/boot_disk.img -s -a minimal mklabel gpt
+	parted $(BUILD_DIR)/boot_disk.img -s -a minimal mkpart EFI FAT16 2048s 93716s
+	parted $(BUILD_DIR)/boot_disk.img -s -a minimal toggle 1 boot
+	dd if=$(BUILD_DIR)/uefi-partition.img of=$(BUILD_DIR)/boot_disk.img bs=512 count=91669 seek=2048 conv=notrunc
+# 	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/kernel.o "::kernel.o"
+# 	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/ramfs.bin "::ramfs.bin"
+
+#
+# Firmware image
+# 
+firmware: $(BUILD_DIR)/OVMF_VARS.fd
+
+$(BUILD_DIR)/OVMF_VARS.fd:
+	cp /usr/share/edk2-ovmf/x64/OVMF_VARS.fd $(BUILD_DIR)
 
 # 
 # Kernel
@@ -85,8 +91,12 @@ clean:
 	cargo clean
 	rm -rf build
 
-run: $(BUILD_DIR)/boot_disk.img
-	qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on -device vmware-svga -m 2G -drive if=ide,format=raw,file=$(BUILD_DIR)/boot_disk.img
+run: $(BUILD_DIR)/boot_disk.img firmware
+	qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on \
+		-device vmware-svga -m 2G \
+		-drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
+		-drive if=pflash,format=raw,file=$(BUILD_DIR)/OVMF_VARS.fd \
+		-drive if=ide,format=raw,file=$(BUILD_DIR)/boot_disk.img
 
 debug: $(BUILD_DIR)/boot_disk.img
 	bochs -f bochs.cfg -q
