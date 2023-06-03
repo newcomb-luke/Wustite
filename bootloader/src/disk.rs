@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
-use crate::bios::{bios_drive_get_params, bios_drive_read_sectors, bios_drive_reset};
+use crate::{
+    bios::{bios_drive_get_params, bios_drive_read_sectors, bios_drive_reset},
+    println,
+};
 
 const DISK_DRIVER_READ_BUFFER: *mut u8 = 0x00007E00 as *mut u8;
 pub const SECTOR_SIZE: usize = 512;
@@ -19,7 +22,7 @@ pub struct Disk {
     max_sector: u8,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct CHS {
     pub cylinder: u16,
     pub head: u8,
@@ -78,6 +81,8 @@ impl Disk {
 
     pub fn read_sector(&mut self, lba: u32, destination: *mut u8) -> Result<(), DiskReadError> {
         let chs = self.lba_to_chs(lba);
+
+        println!("CHS: {:?}", chs);
 
         // The documentation on the BIOS routines say to try three times
         for _ in 0..3 {

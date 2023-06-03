@@ -2,7 +2,10 @@
 
 use core::mem::size_of;
 
-use crate::disk::{Disk, DiskReadError, SECTOR_SIZE};
+use crate::{
+    disk::{Disk, DiskReadError, SECTOR_SIZE},
+    println,
+};
 
 const FAT_DRIVER_BOOT_SECTOR_PTR: *mut u8 = 0x7c00 as *mut u8;
 
@@ -304,7 +307,10 @@ impl<'a> FATFile<'a> {
             let new_fat_section = section_of_fat(new_fat_sector);
 
             if new_fat_section != previous_fat_section {
+                println!("Loading new section!");
                 self.load_fat_section(new_fat_section)?;
+
+                loop {}
 
                 previous_fat_section = new_fat_section;
             }
@@ -420,6 +426,8 @@ impl FATDriver {
         if !entry.is_file() {
             return Err(FATDriverError::FileNotFoundError);
         }
+
+        println!("{}", name.as_str());
 
         Ok(FATFile {
             start_cluster: entry.first_cluster_low(),

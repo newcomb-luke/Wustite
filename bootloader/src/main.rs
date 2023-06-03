@@ -23,9 +23,12 @@ use crate::smap::detect_memory_regions;
 
 const DRIVE_NUM_PTR: *mut u8 = 0x7c24 as *mut u8;
 
-const KERNEL_READ_LOCATION: *mut u8 = 0x00020000 as *mut u8;
-const KERNEL_READ_LOCATION_SIZE: usize = 0x00050000;
+const FILE_READ_LOCATION: *mut u8 = 0x00020000 as *mut u8;
+const FILE_READ_LOCATION_SIZE: usize = 0x00050000;
 const KERNEL_MAXIUMUM_SIZE: usize = 0x5ffff;
+
+const INITRAMFS_LOAD_LOCATION: *mut u8 = 0x00413000 as *mut u8;
+const INITRAMFS_LOAD_LOCATION_SIZE: usize = 0x2ed000;
 
 #[no_mangle]
 pub extern "C" fn bootloader_entry() -> ! {
@@ -53,17 +56,17 @@ pub extern "C" fn bootloader_entry() -> ! {
 
     // println!("Initialized FAT driver");
 
-    let file_name_str = "kernel.o";
+    let kernel_file_name_str = "kernel.o";
 
-    let file_name = match FileName::try_from(file_name_str) {
+    let kernel_file_name = match FileName::try_from(kernel_file_name_str) {
         Ok(file_name) => file_name,
         Err(e) => {
-            println!("Failed to convert file name {file_name_str} into 8.3 format: {e:?}",);
+            println!("Failed to convert file name {kernel_file_name_str} into 8.3 format: {e:?}",);
             halt();
         }
     };
 
-    let mut file = match fat_driver.open_file(&file_name) {
+    let mut kernel_file = match fat_driver.open_file(&kernel_file_name) {
         Ok(file) => file,
         Err(e) => {
             println!("Failed to open file: {:?}", e);
@@ -72,9 +75,9 @@ pub extern "C" fn bootloader_entry() -> ! {
     };
 
     let kernel_read_location =
-        unsafe { core::slice::from_raw_parts_mut(KERNEL_READ_LOCATION, KERNEL_READ_LOCATION_SIZE) };
+        unsafe { core::slice::from_raw_parts_mut(FILE_READ_LOCATION, FILE_READ_LOCATION_SIZE) };
 
-    let bytes_read = match file.read(kernel_read_location) {
+    let bytes_read = match kernel_file.read(kernel_read_location) {
         Ok(bytes_read) => {
             println!("Kernel was {} bytes", bytes_read);
 
@@ -90,7 +93,7 @@ pub extern "C" fn bootloader_entry() -> ! {
         println!("Kernel size exceeds maximum available.");
     }
 
-    let entry_point = match load_elf(KERNEL_READ_LOCATION) {
+    let entry_point = match load_elf(FILE_READ_LOCATION) {
         Ok(entry_point) => {
             println!("Loaded kernel. Entry point: {:08x}", entry_point);
 
@@ -101,6 +104,47 @@ pub extern "C" fn bootloader_entry() -> ! {
             halt();
         }
     };
+
+    // Now that we've loaded the kernel, load the initramfs
+    let initramfs_file_name_str = "ramfs.bin";
+
+    let initramfs_file_name = match FileName::try_from(initramfs_file_name_str) {
+        Ok(file_name) => file_name,
+        Err(e) => {
+            println!(
+                "Failed to convert file name {initramfs_file_name_str} into 8.3 format: {e:?}",
+            );
+            halt();
+        }
+    };
+
+    let mut initramfs_file = match fat_driver.open_file(&initramfs_file_name) {
+        Ok(file) => file,
+        Err(e) => {
+            println!("Failed to open file: {:?}", e);
+            halt();
+        }
+    };
+
+    let initramfs_read_location = unsafe {
+        core::slice::from_raw_parts_mut(INITRAMFS_LOAD_LOCATION, INITRAMFS_LOAD_LOCATION_SIZE)
+    };
+
+    let bytes_read = match initramfs_file.read(initramfs_read_location) {
+        Ok(bytes_read) => {
+            println!("Initramfs was {} bytes", bytes_read);
+
+            bytes_read
+        }
+        Err(e) => {
+            println!("Failed to read file: {:?}", e);
+            halt();
+        }
+    };
+
+    if bytes_read > INITRAMFS_LOAD_LOCATION_SIZE {
+        println!("Initramfs size exceeds maximum available.");
+    }
 
     // Just in case something happened to it
     unsafe { DRIVE_NUM_PTR.write_volatile(drive_number) };

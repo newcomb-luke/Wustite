@@ -1,6 +1,6 @@
 use common::{ALL_PAGE_TABLES_END_ADDR, PAGE_MAP_LEVEL_4_TABLE_START_ADDR, PAGE_SIZE};
 
-use crate::bios::bios_get_next_segment;
+use crate::{bios::bios_get_next_segment, INITRAMFS_LOAD_LOCATION, INITRAMFS_LOAD_LOCATION_SIZE};
 
 const MEMORY_REGIONS_DESCRIPTOR_ADDR: *mut u8 = 0x1000 as *mut u8;
 const MEMORY_REGIONS_START_ADDR: *mut u64 = 0x1010 as *mut u64;
@@ -491,6 +491,14 @@ pub fn detect_memory_regions() -> Result<u64, MemoryDetectionError> {
     smap_entries.add_entry(SMAPEntry {
         base: PAGE_MAP_LEVEL_4_TABLE_START_ADDR,
         length: ALL_PAGE_TABLES_END_ADDR - PAGE_MAP_LEVEL_4_TABLE_START_ADDR,
+        entry_type: SMAPEntryType::Reserved,
+        _acpi: 1,
+    })?;
+
+    // Add where the initramfs is loaded
+    smap_entries.add_entry(SMAPEntry {
+        base: INITRAMFS_LOAD_LOCATION as u64,
+        length: INITRAMFS_LOAD_LOCATION_SIZE as u64,
         entry_type: SMAPEntryType::Reserved,
         _acpi: 1,
     })?;
