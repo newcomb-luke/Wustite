@@ -1,9 +1,6 @@
 use core::fmt::Write;
 
-#[link(name = "bios")]
-extern "cdecl" {
-    fn _BIOS_Video_WriteCharTeletype(c: u8);
-}
+use crate::bios::bios_write_char_teletype;
 
 static mut PRINTER: Printer = Printer {};
 
@@ -27,7 +24,7 @@ impl Printer {
 
     fn raw_print_char(&self, c: char) {
         unsafe {
-            _BIOS_Video_WriteCharTeletype(c as u8);
+            bios_write_char_teletype(c as u8);
         }
     }
 }

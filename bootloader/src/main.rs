@@ -4,6 +4,7 @@
 use core::arch::asm;
 use core::panic::PanicInfo;
 
+mod bios;
 mod disk;
 mod elf;
 mod fat;

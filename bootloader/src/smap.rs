@@ -1,8 +1,6 @@
-use core::arch::asm;
-
 use common::{ALL_PAGE_TABLES_END_ADDR, PAGE_MAP_LEVEL_4_TABLE_START_ADDR, PAGE_SIZE};
 
-use crate::{print, println};
+use crate::bios::bios_get_next_segment;
 
 const MEMORY_REGIONS_DESCRIPTOR_ADDR: *mut u8 = 0x1000 as *mut u8;
 const MEMORY_REGIONS_START_ADDR: *mut u64 = 0x1010 as *mut u64;
@@ -500,95 +498,4 @@ pub fn detect_memory_regions() -> Result<u64, MemoryDetectionError> {
     memory_regions_descriptor.unify_regions(smap_entries)?;
 
     Ok(memory_regions_descriptor.get_max_usable_addr())
-}
-
-// It breaks for some reason if we don't do inline(never) :)
-#[inline(never)]
-unsafe fn bios_get_next_segment(entry: *mut u8, continuation_id: *mut u32) -> i32 {
-    // Why we have to use AT&T syntax:
-    // https://www.reddit.com/r/rust/comments/o8lrz8/how_do_i_get_a_far_absolute_jump_with_inline/
-
-    // Clear interrupts and enter 16-bit protected mode segment
-    asm!(
-        ".code32",
-        "cli",
-        "ljmp $0x18, $2f",
-        "2:",
-        options(att_syntax)
-    );
-
-    // Disable protected mode bit from cr0
-    asm!(
-        ".code16",
-        "mov eax, cr0",
-        "and al, ~1",
-        "mov cr0, eax",
-        out("eax") _
-    );
-
-    // Enter 16-bit real mode segment
-    asm!(".code16", "ljmp $0x00, $2f", "2:", options(att_syntax));
-
-    // Set up real mode segments and re-enable interrupts
-    asm!(
-        ".code16",
-        "xor ax, ax",
-        "mov ds, ax",
-        "mov ss, ax",
-        "mov es, ax",
-        "mov fs, ax",
-        "mov gs, ax",
-        "sti",
-        out("eax") _
-    );
-
-    let success: i32;
-
-    asm!(
-        ".code16",
-        "mov ebx, [{1:e}]",
-        "mov edx, 0x534D4150",
-        "mov edi, {0:e}",
-        "mov ecx, 24",
-        "mov eax, 0x0000E820",
-        "int 0x15",
-        "jc 2f",
-        "mov edx, 0x534D4150",
-        "cmp eax, edx",
-        "jne 2f",
-        "mov eax, ecx",
-        "mov [{1:e}], ebx",
-        "jmp 3f",
-        "2: mov eax, -1",
-        "3: ",
-        in(reg) entry,
-        in(reg) continuation_id,
-        lateout("eax") success,
-        out("ebx") _,
-        out("ecx") _,
-        out("edx") _
-    );
-
-    asm!(
-        ".code16",
-        "cli",
-        "mov eax, cr0",
-        "or al, 1",
-        "mov cr0, eax",
-        out("eax") _
-    );
-
-    asm!(".code16", "ljmp $0x08, $2f", "2: ", options(att_syntax));
-
-    asm!(
-        ".code32",
-        "mov ax, 0x10",
-        "mov ds, ax",
-        "mov ss, ax",
-        "mov es, ax",
-        "mov fs, ax",
-        "mov gs, ax",
-    );
-
-    success
 }

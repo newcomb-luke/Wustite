@@ -5,7 +5,7 @@ origin = 0x00009400;
 SECTIONS {
     . = origin;
 
-    .text : { *(.entry) *(.text .text.*) }
+    .text : { *(.entry) *(.bios) *(.text .text.*) }
 
     .bss : {
         __bss_start = .;
