@@ -1,8 +1,37 @@
-.PHONY: all disk_image efi_partition bootloader clean always kernel initramfs modules firmware
+.PHONY: all clean bootloader kernel
 
-all: efi_partition bootloader disk_image kernel initramfs modules firmware
+all: hard_disk
 
 BUILD_DIR=$(abspath build)
+TARGET_DIR=$(abspath target)
+
+UEFI_PARTITION=$(BUILD_DIR)/uefi-partition.img
+UEFI_PARTITION_SIZE=91669
+
+HARD_DISK_IMG=$(BUILD_DIR)/hard_disk.img
+HARD_DISK_SIZE=93750
+
+INITRAMFS=$(BUILD_DIR)/ramfs.img
+INITRAMFS_SIZE=20480
+
+GPT_OFFSET=2048
+
+BOOTLOADER_BUILD_STD=core
+BOOTLOADER_TARGET_NAME=x86_64-unknown-uefi
+BOOTLOADER_TARGET=$(BOOTLOADER_TARGET_NAME)
+BOOTLOADER_OUTPUT=$(TARGET_DIR)/$(BOOTLOADER_TARGET)/release/bootloader-uefi.efi
+
+KERNEL_RUST_FLAGS=-C code-model=kernel -C relocation-model=static
+KERNEL_BUILD_STD=core,alloc
+KERNEL_TARGET=x86_64-none-eabi
+KERNEL_TARGET_NAME=$(KERNEL_TARGET).json
+KERNEL_OUTPUT=$(TARGET_DIR)/$(KERNEL_TARGET)/release/kernel
+
+MODULE_RUST_FLAGS=-C code-model=kernel -C relocation-model=pic
+MODULE_BUILD_STD=core
+MODULE_TARGET=x86_64-none-eabi
+MODULE_TARGET_NAME=$(MODULE_TARGET).json
+MODULE_OUTPUT_DIR=target/$(MODULE_TARGET)/release
 
 #
 # Bootloader
@@ -10,93 +39,95 @@ BUILD_DIR=$(abspath build)
 
 bootloader: $(BUILD_DIR)/BOOTX64.EFI
 
-$(BUILD_DIR)/BOOTX64.EFI: always FORCE
-	cargo build --release -Zbuild-std=core,compiler_builtins --target x86_64-unknown-uefi --package=bootloader-uefi
-	cp target/x86_64-unknown-uefi/release/bootloader-uefi.efi $(BUILD_DIR)/BOOTX64.EFI
+$(BUILD_DIR)/BOOTX64.EFI: efi_partition FORCE
+	cargo build --release -Zbuild-std=$(BOOTLOADER_BUILD_STD) --target=$(BOOTLOADER_TARGET_NAME) --package=bootloader-uefi
+	cp $(BOOTLOADER_OUTPUT) $(BUILD_DIR)/BOOTX64.EFI
+	mcopy -i $(UEFI_PARTITION) $(BUILD_DIR)/BOOTX64.EFI "::EFI/BOOT/BOOTX64.EFI" -o
 
 #
-# EFI partition
-#
-efi_partition: $(BUILD_DIR)/uefi-partition.img
-
-$(BUILD_DIR)/uefi-partition.img: bootloader
-	dd if=/dev/zero of=$(BUILD_DIR)/uefi-partition.img bs=512 count=91669
-	mformat -i $(BUILD_DIR)/uefi-partition.img -h 32 -t 32 -n 64 -c 1
-	mmd -i $(BUILD_DIR)/uefi-partition.img ::EFI
-	mmd -i $(BUILD_DIR)/uefi-partition.img ::EFI/BOOT
-	mcopy -i $(BUILD_DIR)/uefi-partition.img $(BUILD_DIR)/BOOTX64.EFI ::EFI/BOOT
-
-#
-# Disk image
+# EFI Partition
 #
 
-disk_image: $(BUILD_DIR)/boot_disk.img
+efi_partition: $(UEFI_PARTITION)
 
-$(BUILD_DIR)/boot_disk.img: efi_partition kernel initramfs modules
-	dd if=/dev/zero of=$(BUILD_DIR)/boot_disk.img bs=512 count=93750
-	parted $(BUILD_DIR)/boot_disk.img -s -a minimal mklabel gpt
-	parted $(BUILD_DIR)/boot_disk.img -s -a minimal mkpart EFI FAT16 2048s 93716s
-	parted $(BUILD_DIR)/boot_disk.img -s -a minimal toggle 1 boot
-	dd if=$(BUILD_DIR)/uefi-partition.img of=$(BUILD_DIR)/boot_disk.img bs=512 count=91669 seek=2048 conv=notrunc
-# 	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/kernel.o "::kernel.o"
-# 	mcopy -i $(BUILD_DIR)/boot_disk.img $(BUILD_DIR)/ramfs.bin "::ramfs.bin"
+$(UEFI_PARTITION):
+	mkdir -p $(BUILD_DIR)
+	dd if=/dev/zero of=$(BUILD_DIR)/uefi-partition.img bs=512 count=$(UEFI_PARTITION_SIZE)
+	mformat -i $(UEFI_PARTITION) -h 32 -t 32 -n 64 -c 1
+	mmd -i $(UEFI_PARTITION) "::EFI"
+	mmd -i $(UEFI_PARTITION) "::EFI/BOOT"
 
-#
-# Firmware image
 # 
+# Hard disk image
+#
+
+hard_disk: raw_disk kernel modules
+	dd if=$(UEFI_PARTITION) of=$(HARD_DISK_IMG) bs=512 count=$(UEFI_PARTITION_SIZE) seek=$(GPT_OFFSET) conv=notrunc
+
+raw_disk: $(HARD_DISK_IMG)
+
+$(HARD_DISK_IMG):
+	mkdir -p $(BUILD_DIR)
+	dd if=/dev/zero of=$(HARD_DISK_IMG) bs=512 count=$(HARD_DISK_SIZE)
+	parted $(HARD_DISK_IMG) -s -a minimal mklabel gpt
+	parted $(HARD_DISK_IMG) -s -a minimal mkpart EFI FAT16 $(GPT_OFFSET)s 93716s
+	parted $(HARD_DISK_IMG) -s -a minimal toggle 1 boot
+
+# 
+# Kernel
+#
+
+kernel: $(BUILD_DIR)/kernel.o
+
+$(BUILD_DIR)/kernel.o: bootloader FORCE
+	mkdir -p $(BUILD_DIR)
+	RUSTFLAGS="$(KERNEL_RUST_FLAGS)" cargo build --release -Z build-std=$(KERNEL_BUILD_STD) --target=$(KERNEL_TARGET_NAME) --package=kernel
+	cp $(KERNEL_OUTPUT) $(BUILD_DIR)/kernel.o
+	mcopy -i $(UEFI_PARTITION) $(BUILD_DIR)/kernel.o "::kernel.o" -o
+
+# 
+# Initramfs
+#
+
+initramfs: $(INITRAMFS)
+
+$(INITRAMFS):
+	dd if=/dev/zero of=$(INITRAMFS) bs=512 count=$(INITRAMFS_SIZE)
+	mkfs.fat -F 16 -n "INITRAMF" $(INITRAMFS)
+
+#
+# Kernel modules
+#
+
+modules: ide_driver
+
+ide_driver: $(BUILD_DIR)/libide_driver.so
+
+$(BUILD_DIR)/libide_driver.so: initramfs
+	cd modules/ide_driver && \
+	RUSTFLAGS="$(MODULE_RUST_FLAGS)" cargo build --release -Z build-std=$(MODULE_BUILD_STD) --target=../../$(MODULE_TARGET_NAME) && \
+	cp $(MODULE_OUTPUT_DIR)/libide_driver.so $(BUILD_DIR)/libide_driver.so
+	mcopy -i $(INITRAMFS) $(BUILD_DIR)/libide_driver.so "::libide.so" -o
+
+#
+# QEMU Firmware
+#
+
 firmware: $(BUILD_DIR)/OVMF_VARS.fd
 
 $(BUILD_DIR)/OVMF_VARS.fd:
 	cp /usr/share/edk2-ovmf/x64/OVMF_VARS.fd $(BUILD_DIR)
 
-# 
-# Kernel
-#
-kernel: $(BUILD_DIR)/kernel.o
-
-$(BUILD_DIR)/kernel.o: always FORCE
-	RUSTFLAGS="-C code-model=kernel -C relocation-model=static" cargo build --release -Z build-std=core,alloc --target=x86_64-none-eabi.json --package=kernel
-	cp target/x86_64-none-eabi/release/kernel $(BUILD_DIR)/kernel.o
-
-#
-# Initramfs
-#
-initramfs: modules
-	dd if=/dev/zero of=$(BUILD_DIR)/ramfs.bin bs=512 count=128
-	mkfs.fat -F 12 -n "INITRAM " $(BUILD_DIR)/ramfs.bin
-	mcopy -i $(BUILD_DIR)/ramfs.bin $(BUILD_DIR)/libide_driver.so "::libide.so"
-
-#
-# Kernel modules
-#
-modules: $(BUILD_DIR)/ide_driver.so
-
-$(BUILD_DIR)/ide_driver.so: 
-	cd modules/ide_driver && \
-	RUSTFLAGS="-C code-model=kernel -C relocation-model=pic" cargo build --release -Z build-std=core --target=../../x86_64-none-eabi.json && \
-	cp target/x86_64-none-eabi/release/libide_driver.so $(BUILD_DIR)/libide_driver.so
+run: hard_disk firmware
+	qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on -m 2G \
+		-device vmware-svga \
+		-drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
+		-drive if=pflash,format=raw,file=$(BUILD_DIR)/OVMF_VARS.fd \
+		-drive if=ide,format=raw,file=$(HARD_DISK_IMG)
 
 FORCE: ;
 
-#
-# Always
-#
-always:
-	mkdir -p $(BUILD_DIR)
-
-# 
-# Clean
-#
 clean:
 	cargo clean
-	rm -rf build
-
-run: $(BUILD_DIR)/boot_disk.img firmware
-	qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on \
-		-device vmware-svga -m 2G \
-		-drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
-		-drive if=pflash,format=raw,file=$(BUILD_DIR)/OVMF_VARS.fd \
-		-drive if=ide,format=raw,file=$(BUILD_DIR)/boot_disk.img
-
-debug: $(BUILD_DIR)/boot_disk.img
-	bochs -f bochs.cfg -q
+	cd modules/ide_driver && cargo clean
+	rm -drf build
