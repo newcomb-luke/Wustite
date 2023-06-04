@@ -1,5 +1,7 @@
 #![no_std]
 
+use memory::MemoryRegion;
+
 pub const MAXIMUM_SUPPORTED_MEMORY: u64 = 0x200000000; // 8 GiB
 
 pub const PHYS_MAP_VIRTUAL_OFFSET: u64 = 0x18000000000;
@@ -23,4 +25,33 @@ pub fn u64_from_slice(bytes: &[u8]) -> u64 {
     let mut u64_bytes = [0u8; 8];
     u64_bytes.copy_from_slice(bytes);
     u64::from_ne_bytes(u64_bytes)
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+#[non_exhaustive]
+pub struct BootInfo {
+    pub memory_regions_start: *const MemoryRegion,
+    pub memory_regions_count: u64,
+    pub initramfs_location: *const u8,
+    pub initramfs_length: u64,
+    pub physical_memory_offset: u64,
+}
+
+impl BootInfo {
+    pub fn new(
+        memory_regions_start: *const MemoryRegion,
+        memory_regions_count: u64,
+        initramfs_location: *const u8,
+        initramfs_length: u64,
+        physical_memory_offset: u64,
+    ) -> Self {
+        Self {
+            memory_regions_start,
+            memory_regions_count,
+            initramfs_location,
+            initramfs_length,
+            physical_memory_offset,
+        }
+    }
 }

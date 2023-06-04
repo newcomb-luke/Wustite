@@ -6,7 +6,7 @@ use uefi::{
 };
 
 use common::memory::{MemoryRegion, MemoryRegionType};
-use uefi_services::{print, println};
+use uefi_services::println;
 
 /// To make our lives easier (no reallocation) we are going to just allocate
 /// a fixed number of spots for unified memory regions and hope for the best.

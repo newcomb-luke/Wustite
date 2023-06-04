@@ -1,4 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
 pub enum MemoryRegionType {
     Reserved,
     ACPIReclaimable,
@@ -49,6 +50,7 @@ impl PartialOrd for MemoryRegionType {
 /// by the kernel (after they have been read, as they contain data like the memory
 /// regions). They will be in sorted order.
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
 pub struct MemoryRegion {
     pub start_addr: u64,
     pub end_addr: u64,

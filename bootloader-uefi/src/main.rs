@@ -3,8 +3,8 @@
 
 use core::panic;
 
-use uefi::{prelude::*, table::boot::MemoryType};
-use uefi_services::{print, println};
+use uefi::{prelude::*, table::cfg::ACPI2_GUID};
+use uefi_services::println;
 
 use crate::{
     elf::validate_elf,
@@ -56,8 +56,19 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     let (first_region, num_regions) = get_memory_map(boot_services).unwrap();
 
+    let acpi_rsdp = system_table
+        .config_table()
+        .iter()
+        .find(|e| e.guid == ACPI2_GUID)
+        .map(|e| e.address as *const u8)
+        .expect("Could not find ACPI table, cannot continue.");
+
+    println!("Address of ACPI RSDP table: {:?}", acpi_rsdp);
+
     // Buys us 5 minutes to look at the output of our horrible code
     loop {}
+
+    let _ = system_table.exit_boot_services();
 
     Status::SUCCESS
 }
