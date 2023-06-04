@@ -3,16 +3,18 @@
 
 use core::panic;
 
-use uefi::prelude::*;
-use uefi_services::println;
+use uefi::{prelude::*, table::boot::MemoryType};
+use uefi_services::{print, println};
 
 use crate::{
     elf::validate_elf,
     filesystem::{find_file, read_file},
+    memory::get_memory_map,
 };
 
 mod elf;
 mod filesystem;
+mod memory;
 
 const KERNEL_PATH: &str = "KERNEL.O";
 const INITRAMFS_PATH: &str = "INITRAMF.IMG";
@@ -51,6 +53,8 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     }
 
     println!("Kernel was a valid ELF binary!");
+
+    let (first_region, num_regions) = get_memory_map(boot_services).unwrap();
 
     // Buys us 5 minutes to look at the output of our horrible code
     loop {}

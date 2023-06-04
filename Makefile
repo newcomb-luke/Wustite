@@ -81,7 +81,7 @@ kernel: $(BUILD_DIR)/kernel.o
 
 $(BUILD_DIR)/kernel.o: bootloader FORCE
 	mkdir -p $(BUILD_DIR)
-	RUSTFLAGS="$(KERNEL_RUST_FLAGS)" cargo build --release -Z build-std=$(KERNEL_BUILD_STD) --target=$(KERNEL_TARGET_NAME) --package=kernel
+#	RUSTFLAGS="$(KERNEL_RUST_FLAGS)" cargo build --release -Z build-std=$(KERNEL_BUILD_STD) --target=$(KERNEL_TARGET_NAME) --package=kernel
 	cp $(KERNEL_OUTPUT) $(BUILD_DIR)/kernel.o
 	mcopy -i $(UEFI_PARTITION) $(BUILD_DIR)/kernel.o "::kernel.o" -o
 
