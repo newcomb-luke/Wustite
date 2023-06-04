@@ -3,20 +3,19 @@ use uefi::{
     proto::{
         loaded_image::LoadedImage,
         media::{
-            file::{File, FileAttribute, FileHandle, FileMode, RegularFile},
+            file::{File, FileAttribute, FileInfo, FileMode, RegularFile},
             fs::SimpleFileSystem,
         },
     },
+    table::boot::MemoryType,
     CStr16,
 };
-use uefi_services::println;
 
 #[derive(Debug, Clone, Copy)]
 pub enum FindFileError {
     IsDirectoryError,
     PathTooLongError,
     PathSegmentWasFileError,
-    VolumeAlreadyOpenError,
     PathDoesNotExistError,
     UEFIError,
 }
@@ -39,10 +38,10 @@ pub fn find_file(path: &str, boot_services: &BootServices) -> Result<RegularFile
 
     let mut current_directory = volume_handle
         .open_volume()
-        .map_err(|_| FindFileError::VolumeAlreadyOpenError)?;
+        .map_err(|_| FindFileError::UEFIError)?;
 
     // The number of path segments is always equal to the number of '/' + 1
-    let mut num_segments = path.chars().filter(|c| *c == '/').count() + 1;
+    let num_segments = path.chars().filter(|c| *c == '/').count() + 1;
 
     for (num, segment) in path.split("/").enumerate() {
         // Skip the root '/' if there is one, and consequently allow paths like
@@ -92,4 +91,39 @@ pub fn find_file(path: &str, boot_services: &BootServices) -> Result<RegularFile
     // Either the path was empty (therefore the root directory), or we never found
     // a file
     Err(FindFileError::IsDirectoryError)
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ReadFileError {
+    FileReadError,
+    UEFIError,
+}
+
+/// Loads a file into memory. Returns a slice to wherever the buffer we allocated
+/// from UEFI put it.
+pub fn read_file(
+    mut file: RegularFile,
+    boot_services: &BootServices,
+) -> Result<&mut [u8], ReadFileError> {
+    let mut file_info_buffer = [0u8; 1024];
+
+    let file_size = file
+        .get_info::<FileInfo>(&mut file_info_buffer)
+        .map_err(|_| ReadFileError::UEFIError)?
+        .file_size();
+
+    let load_area_start = boot_services
+        .allocate_pool(MemoryType::LOADER_DATA, file_size.try_into().unwrap())
+        .map_err(|_| ReadFileError::UEFIError)?;
+
+    // SAFETY: We know that the buffer we asked for is at least file_size bytes long
+    // otherwise the call would have failed, and the pointer is where it told us
+    // the start was.
+    let file_buffer =
+        unsafe { core::slice::from_raw_parts_mut(load_area_start, file_size.try_into().unwrap()) };
+
+    file.read(file_buffer)
+        .map_err(|_| ReadFileError::FileReadError)?;
+
+    Ok(file_buffer)
 }

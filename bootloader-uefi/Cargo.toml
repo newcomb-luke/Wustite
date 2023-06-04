@@ -6,3 +6,4 @@ edition.workspace = true
 [dependencies]
 uefi = "0.22"
 uefi-services = "0.19"
+common = { path = "../common" }

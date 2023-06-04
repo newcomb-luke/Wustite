@@ -1,21 +1,17 @@
 #![no_std]
 #![no_main]
 
-use uefi::{
-    prelude::*,
-    proto::{
-        loaded_image::LoadedImage,
-        media::{
-            file::{Directory, File, FileAttribute, FileMode},
-            fs::SimpleFileSystem,
-        },
-    },
-    CStr16,
-};
+use core::panic;
+
+use uefi::prelude::*;
 use uefi_services::println;
 
-use crate::filesystem::find_file;
+use crate::{
+    elf::validate_elf,
+    filesystem::{find_file, read_file},
+};
 
+mod elf;
 mod filesystem;
 
 const KERNEL_PATH: &str = "KERNEL.O";
@@ -39,7 +35,25 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     println!("Found {}", INITRAMFS_PATH);
 
-    system_table.boot_services().stall(10_000_000);
+    let kernel_read_location = read_file(kernel_file, boot_services).unwrap();
+
+    println!("Loaded kernel at: {:?}", kernel_read_location.as_ptr());
+
+    let initramfs_read_location = read_file(initramfs_file, boot_services).unwrap();
+
+    println!(
+        "Initramfs loaded at: {:?}",
+        initramfs_read_location.as_ptr()
+    );
+
+    if let Err(e) = validate_elf(kernel_read_location) {
+        panic!("Failed to verify kernel file: {:?}", e);
+    }
+
+    println!("Kernel was a valid ELF binary!");
+
+    // Buys us 5 minutes to look at the output of our horrible code
+    loop {}
 
     Status::SUCCESS
 }
