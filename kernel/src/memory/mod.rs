@@ -1,10 +1,9 @@
+use common::memory::MemoryRegion;
 use x86_64::{
     registers::control::Cr3,
     structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB},
     PhysAddr, VirtAddr,
 };
-
-use crate::entry::memory::MemoryRegion;
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {
@@ -30,7 +29,7 @@ impl BootInfoFrameAllocator {
         // get usable regions from memory map
         let regions = self.memory_map.iter();
         // map each region to its address range
-        let addr_ranges = regions.map(|r| r.start..r.end);
+        let addr_ranges = regions.map(|r| r.start_addr..r.end_addr);
         // transform to an iterator of frame start addresses
         let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
         // create `PhysFrame` types from the start addresses

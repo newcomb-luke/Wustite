@@ -10,6 +10,22 @@ const PF_W: u32 = 2;
 const PF_R: u32 = 4;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub enum RelocationType {
+    R_X84_64_RELATIVE,
+    Unknown,
+}
+
+impl From<u32> for RelocationType {
+    fn from(value: u32) -> Self {
+        match value {
+            8 => Self::R_X84_64_RELATIVE,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum InstructionSet {
     X86_64,
     Unknown,
@@ -314,5 +330,401 @@ impl<'a> Iterator for Elf64ProgramHeaderIterator<'a> {
         self.current_entry += 1;
 
         Some(entry)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ElfValidateError {
+    NotElfFileError,
+    BitFormat32UnsupportedError,
+    UnknownBitFormatError,
+    BigEndianUnsupportedError,
+    NotX86InstructionSetError,
+    ABIUnsupportedError,
+    UnknownProgramSectionType(u32),
+}
+
+/// Represents an ELF file in memory, tied to a buffer of
+/// immutable bytes
+pub struct ElfFile<'a> {
+    header: Elf64Header,
+    bytes: &'a [u8],
+}
+
+impl<'a> ElfFile<'a> {
+    pub fn new_validated(bytes: &'a [u8]) -> Result<Self, ElfValidateError> {
+        let header = Elf64Header::from(bytes);
+
+        if header.magic != ELF_FILE_MAGIC {
+            return Err(ElfValidateError::NotElfFileError);
+        }
+
+        if header.bit_format != BitFormat::Bits64 {
+            if header.bit_format == BitFormat::Bits32 {
+                return Err(ElfValidateError::BitFormat32UnsupportedError);
+            }
+
+            return Err(ElfValidateError::UnknownBitFormatError);
+        }
+
+        if header.endianness != Endianness::Little {
+            return Err(ElfValidateError::BigEndianUnsupportedError);
+        }
+
+        if header.instruction_set != InstructionSet::X86_64 {
+            return Err(ElfValidateError::NotX86InstructionSetError);
+        }
+
+        if header.os_abi != OSABI::SystemV {
+            return Err(ElfValidateError::ABIUnsupportedError);
+        }
+
+        for entry in header.program_headers(bytes) {
+            if let SegmentType::Unknown(value) = entry.segment_type {
+                return Err(ElfValidateError::UnknownProgramSectionType(value));
+            }
+        }
+
+        Ok(Self { header, bytes })
+    }
+
+    pub fn file_type(&self) -> FileType {
+        self.header.file_type
+    }
+
+    pub fn program_headers(&self) -> Elf64ProgramHeaderIterator {
+        self.header.program_headers(self.bytes)
+    }
+
+    pub fn get_dynamic_section(&self) -> Option<Elf64DynamicSectionIterator> {
+        let dynamic_header = self
+            .header
+            .program_headers(self.bytes)
+            .find(|e| e.segment_type == SegmentType::Dynamic)?;
+
+        let section_slice = &self.bytes[dynamic_header.offset as usize..];
+
+        let num_entries = dynamic_header.size_in_file as usize / Dyn64Entry::SIZE_IN_BYTES;
+
+        Some(Elf64DynamicSectionIterator::new(section_slice, num_entries))
+    }
+
+    // pub fn get_rela_section(&self) -> Option<Elf64RelaSectionIterator> {
+    //     let rela_entry = self
+    //         .get_dynamic_section()?
+    //         .find(|e| e.tag() == Dyn64EntryTag::Rela)?;
+    //     let rela_size_entry = self
+    //         .get_dynamic_section()?
+    //         .find(|e| e.tag() == Dyn64EntryTag::RelaSz)?;
+
+    //     let section_slice = &self.bytes[rela_entry.value as usize + 0x1000..];
+
+    //     let num_entries = rela_size_entry.value as usize / Rela64Entry::SIZE_IN_BYTES;
+
+    //     Some(Elf64RelaSectionIterator::new(section_slice, num_entries))
+    // }
+}
+
+pub struct Elf64DynamicSectionIterator<'a> {
+    section_start: &'a [u8],
+    num_entries: usize,
+    current_entry: usize,
+}
+
+impl<'a> Elf64DynamicSectionIterator<'a> {
+    fn new(section_start: &'a [u8], num_entries: usize) -> Self {
+        Self {
+            section_start,
+            num_entries,
+            current_entry: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for Elf64DynamicSectionIterator<'a> {
+    type Item = Dyn64Entry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_entry >= self.num_entries {
+            return None;
+        }
+
+        let slice_offset = self.current_entry * Dyn64Entry::SIZE_IN_BYTES;
+        let entry_slice = &self.section_start[slice_offset..];
+
+        self.current_entry += 1;
+
+        Some(Dyn64Entry::read(entry_slice))
+    }
+}
+
+/// Known in the ELF docs as an Elf64_Dyn d_tag
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Dyn64EntryTag {
+    Null,
+    Needed,
+    PltRelSz,
+    PltGot,
+    Hash,
+    StrTab,
+    SymTab,
+    Rela,
+    RelaSz,
+    RelaEnt,
+    StrSz,
+    SymEnt,
+    Init,
+    Fini,
+    SoName,
+    RPath,
+    Symbolic,
+    Rel,
+    RelSz,
+    RelEnt,
+    PltRel,
+    Debug,
+    TextRel,
+    JmpRel,
+    BindNow,
+    Unknown(u64),
+}
+
+impl From<u64> for Dyn64EntryTag {
+    fn from(value: u64) -> Self {
+        match value {
+            0 => Self::Null,
+            1 => Self::Needed,
+            2 => Self::PltRelSz,
+            3 => Self::PltGot,
+            4 => Self::Hash,
+            5 => Self::StrTab,
+            6 => Self::SymTab,
+            7 => Self::Rela,
+            8 => Self::RelaSz,
+            9 => Self::RelaEnt,
+            10 => Self::StrSz,
+            11 => Self::SymEnt,
+            12 => Self::Init,
+            13 => Self::Fini,
+            14 => Self::SoName,
+            15 => Self::RPath,
+            16 => Self::Symbolic,
+            17 => Self::Rel,
+            18 => Self::RelSz,
+            19 => Self::RelEnt,
+            20 => Self::PltRel,
+            21 => Self::Debug,
+            22 => Self::TextRel,
+            23 => Self::JmpRel,
+            24 => Self::BindNow,
+            v => Self::Unknown(v),
+        }
+    }
+}
+
+impl Display for Dyn64EntryTag {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            Self::Null => "NULL",
+            Self::Needed => "NEEDED",
+            Self::PltRelSz => "PLTRELSZ",
+            Self::PltGot => "PLTGOT",
+            Self::Hash => "HASH",
+            Self::StrTab => "STRTAB",
+            Self::SymTab => "SYMTAB",
+            Self::Rela => "RELA",
+            Self::RelaSz => "RELASZ",
+            Self::RelaEnt => "RELAENT",
+            Self::StrSz => "STRSZ",
+            Self::SymEnt => "SYMENT",
+            Self::Init => "INIT",
+            Self::Fini => "FINI",
+            Self::SoName => "SONAME",
+            Self::RPath => "RPATH",
+            Self::Symbolic => "SYMBOLIC",
+            Self::Rel => "REL",
+            Self::RelSz => "RELSZ",
+            Self::RelEnt => "RELENT",
+            Self::PltRel => "PLTREL",
+            Self::Debug => "DEBUG",
+            Self::TextRel => "TEXTREL",
+            Self::JmpRel => "JMPREL",
+            Self::BindNow => "BINDNOW",
+            Self::Unknown(v) => {
+                return f.write_fmt(format_args!("Unknown ({v})"));
+            }
+        };
+
+        f.write_str(s)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Dyn64Entry {
+    tag: Dyn64EntryTag,
+    value: u64,
+}
+
+impl Dyn64Entry {
+    const SIZE_IN_BYTES: usize = 16;
+
+    fn read(bytes: &[u8]) -> Self {
+        let tag = u64_from_slice(&bytes[0..8]);
+        let value = u64_from_slice(&bytes[8..16]);
+
+        Self {
+            tag: tag.into(),
+            value,
+        }
+    }
+
+    pub fn tag(&self) -> Dyn64EntryTag {
+        self.tag
+    }
+
+    pub fn value(&self) -> u64 {
+        self.value
+    }
+}
+
+impl Display for Dyn64Entry {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!("{} 0x{:016x}", self.tag, self.value))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Rela64EntryType {
+    None,
+    Word64,
+    PC32,
+    GOT32,
+    PLT32,
+    Copy,
+    GlobDat,
+    JumpSlot,
+    Relative,
+    Unknown(u32),
+}
+
+impl From<u32> for Rela64EntryType {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => Self::None,
+            1 => Self::Word64,
+            2 => Self::PC32,
+            3 => Self::GOT32,
+            4 => Self::PLT32,
+            5 => Self::Copy,
+            6 => Self::GlobDat,
+            7 => Self::JumpSlot,
+            8 => Self::Relative,
+            v => Self::Unknown(v),
+        }
+    }
+}
+
+impl Display for Rela64EntryType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            Self::None => "R_X84_64_NONE",
+            Self::Word64 => "R_X84_64_64",
+            Self::PC32 => "R_X84_64_PC32",
+            Self::GOT32 => "R_X84_64_GOT32",
+            Self::PLT32 => "R_X84_64_PLT32",
+            Self::Copy => "R_X84_64_COPY",
+            Self::GlobDat => "R_X84_64_GLOB_DAT",
+            Self::JumpSlot => "R_X84_64_JUMP_SLOT",
+            Self::Relative => "R_X84_64_RELATIVE",
+            Self::GlobDat => "R_X84_64_GLOB_DAT",
+            Self::Unknown(v) => {
+                return f.write_fmt(format_args!("Unknown ({v})"));
+            }
+        };
+
+        f.write_str(s)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Rela64Entry {
+    offset: u64,
+    info: u64,
+    addend: u64,
+}
+
+impl Rela64Entry {
+    const SIZE_IN_BYTES: usize = 24;
+
+    fn read(bytes: &[u8]) -> Self {
+        let offset = u64_from_slice(&bytes[0..8]);
+        let info = u64_from_slice(&bytes[8..16]);
+        let addend = u64_from_slice(&bytes[16..24]);
+
+        Self {
+            offset,
+            info,
+            addend,
+        }
+    }
+
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    pub fn symbol_table(&self) -> u32 {
+        (self.info >> 32) as u32
+    }
+
+    pub fn ty(&self) -> Rela64EntryType {
+        ((self.info & 0xffffffff) as u32).into()
+    }
+
+    pub fn addend(&self) -> u64 {
+        self.addend
+    }
+}
+
+impl Display for Rela64Entry {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!(
+            "{:016x} 0x{:016x} {}",
+            self.offset,
+            self.addend,
+            self.ty(),
+        ))
+    }
+}
+
+pub struct Elf64RelaSectionIterator<'a> {
+    section_start: &'a [u8],
+    num_entries: usize,
+    current_entry: usize,
+}
+
+impl<'a> Elf64RelaSectionIterator<'a> {
+    fn new(section_start: &'a [u8], num_entries: usize) -> Self {
+        Self {
+            section_start,
+            num_entries,
+            current_entry: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for Elf64RelaSectionIterator<'a> {
+    type Item = Rela64Entry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_entry >= self.num_entries {
+            return None;
+        }
+
+        let slice_offset = self.current_entry * Rela64Entry::SIZE_IN_BYTES;
+        let entry_slice = &self.section_start[slice_offset..];
+
+        self.current_entry += 1;
+
+        Some(Rela64Entry::read(entry_slice))
     }
 }

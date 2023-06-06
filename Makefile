@@ -21,15 +21,15 @@ BOOTLOADER_TARGET_NAME=x86_64-unknown-uefi
 BOOTLOADER_TARGET=$(BOOTLOADER_TARGET_NAME)
 BOOTLOADER_OUTPUT=$(TARGET_DIR)/$(BOOTLOADER_TARGET)/release/bootloader-uefi.efi
 
-KERNEL_RUST_FLAGS=-C code-model=kernel -C relocation-model=pic
+KERNEL_RUST_FLAGS=-C code-model=kernel -C relocation-model=pie
 KERNEL_BUILD_STD=core,alloc
 KERNEL_TARGET=x86_64-none-eabi
 KERNEL_TARGET_NAME=$(KERNEL_TARGET).json
 KERNEL_OUTPUT=$(TARGET_DIR)/$(KERNEL_TARGET)/release/kernel
 
-MODULE_RUST_FLAGS=-C code-model=kernel -C relocation-model=pic
+MODULE_RUST_FLAGS=-C code-model=kernel -C relocation-model=pie
 MODULE_BUILD_STD=core
-MODULE_TARGET=x86_64-none-eabi
+MODULE_TARGET=x86_64-wustite-kernel
 MODULE_TARGET_NAME=$(MODULE_TARGET).json
 MODULE_OUTPUT_DIR=target/$(MODULE_TARGET)/release
 
@@ -81,7 +81,7 @@ kernel: $(BUILD_DIR)/kernel.o
 
 $(BUILD_DIR)/kernel.o: bootloader FORCE
 	mkdir -p $(BUILD_DIR)
-#	RUSTFLAGS="$(KERNEL_RUST_FLAGS)" cargo build --release -Z build-std=$(KERNEL_BUILD_STD) --target=$(KERNEL_TARGET_NAME) --package=kernel
+	RUSTFLAGS="$(KERNEL_RUST_FLAGS)" cargo build --release -Z build-std=$(KERNEL_BUILD_STD) --target=$(KERNEL_TARGET_NAME) --package=kernel
 	cp $(KERNEL_OUTPUT) $(BUILD_DIR)/kernel.o
 	mcopy -i $(UEFI_PARTITION) $(BUILD_DIR)/kernel.o "::kernel.o" -o
 

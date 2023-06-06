@@ -14,19 +14,17 @@ mod interrupts;
 mod memory;
 mod std;
 
+use common::BootInfo;
 use drivers::{keyboard::KEYBOARD_BUFFER, serial::SERIAL0};
 use x86_64::VirtAddr;
 
-use crate::{
-    drivers::{
-        ata::available_drives,
-        pci::{PCIDevice, PCI_SUBSYSTEM},
-        video::{
-            svga::vmware_svga_2::VMWareSVGADriver,
-            vga::text::{eprintln, println},
-        },
+use crate::drivers::{
+    ata::available_drives,
+    pci::{PCIDevice, PCI_SUBSYSTEM},
+    video::{
+        svga::vmware_svga_2::VMWareSVGADriver,
+        vga::text::{eprintln, println},
     },
-    entry::BootInfo,
 };
 
 fn start_kernel() {
@@ -75,8 +73,14 @@ fn initialize_kernel(boot_info: &BootInfo) {
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
 
-    let mut frame_allocator =
-        unsafe { memory::BootInfoFrameAllocator::init(boot_info.memory_regions) };
+    let memory_regions = unsafe {
+        core::slice::from_raw_parts(
+            boot_info.memory_regions_start,
+            boot_info.memory_regions_count as usize,
+        )
+    };
+
+    let mut frame_allocator = unsafe { memory::BootInfoFrameAllocator::init(memory_regions) };
 
     allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("Kernel heap initialization failed");

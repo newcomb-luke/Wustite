@@ -29,29 +29,10 @@ pub fn u64_from_slice(bytes: &[u8]) -> u64 {
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-#[non_exhaustive]
 pub struct BootInfo {
     pub memory_regions_start: *const MemoryRegion,
     pub memory_regions_count: u64,
     pub initramfs_location: *const u8,
     pub initramfs_length: u64,
     pub physical_memory_offset: u64,
-}
-
-impl BootInfo {
-    pub fn new(
-        memory_regions_start: *const MemoryRegion,
-        memory_regions_count: u64,
-        initramfs_location: *const u8,
-        initramfs_length: u64,
-        physical_memory_offset: u64,
-    ) -> Self {
-        Self {
-            memory_regions_start,
-            memory_regions_count,
-            initramfs_location,
-            initramfs_length,
-            physical_memory_offset,
-        }
-    }
 }

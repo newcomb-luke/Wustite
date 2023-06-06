@@ -3,16 +3,21 @@
 
 use core::panic;
 
-use uefi::{prelude::*, table::cfg::ACPI2_GUID};
+use common::elf::{ElfFile, FileType};
+use uefi::{
+    prelude::*,
+    table::{
+        boot::{AllocateType, MemoryType},
+        cfg::ACPI2_GUID,
+    },
+};
 use uefi_services::println;
 
 use crate::{
-    elf::validate_elf,
     filesystem::{find_file, read_file},
     memory::get_memory_map,
 };
 
-mod elf;
 mod filesystem;
 mod memory;
 
@@ -48,11 +53,35 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         initramfs_read_location.as_ptr()
     );
 
-    if let Err(e) = validate_elf(kernel_read_location) {
-        panic!("Failed to verify kernel file: {:?}", e);
+    let kernel_elf = match ElfFile::new_validated(kernel_read_location) {
+        Ok(elf) => elf,
+        Err(e) => {
+            panic!("Failed to verify kernel ELF file: {:?}", e);
+        }
+    };
+
+    if kernel_elf.file_type() != FileType::Dyn {
+        panic!("Only DYN ELF kernel images are supported");
     }
 
-    println!("Kernel was a valid ELF binary!");
+    println!("Kernel was valid");
+
+    let kernel_load_location = boot_services
+        .allocate_pages(AllocateType::AnyPages, MemoryType::RESERVED, 2)
+        .unwrap();
+
+    println!("Kernel load location: {kernel_load_location:08x}");
+
+    let dynamic_section = kernel_elf
+        .get_dynamic_section()
+        .expect("Expected DYN ELF file to have DYNAMIC section");
+
+    for entry in dynamic_section {
+        println!("  {entry}");
+    }
+
+    // Buys us 5 minutes to look at the output of our horrible code
+    loop {}
 
     let (first_region, num_regions) = get_memory_map(boot_services).unwrap();
 
@@ -64,9 +93,6 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         .expect("Could not find ACPI table, cannot continue.");
 
     println!("Address of ACPI RSDP table: {:?}", acpi_rsdp);
-
-    // Buys us 5 minutes to look at the output of our horrible code
-    loop {}
 
     let _ = system_table.exit_boot_services();
 

@@ -12,6 +12,5 @@
   "panic-strategy": "abort",
   "disable-redzone": true,
   "features": "-mmx,-sse,+soft-float",
-  "position-independent-executables": true,
-  "static-position-independent-executables": true
+  "dynamic-linking": true
 }
