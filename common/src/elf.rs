@@ -202,6 +202,13 @@ impl Elf64Header {
             current_entry: 0,
         }
     }
+
+    pub fn get_maximum_process_image_size(&self, bytes: &[u8]) -> u64 {
+        self.program_headers(bytes)
+            .map(|e| e.virtual_address + e.size_in_memory)
+            .max()
+            .unwrap()
+    }
 }
 
 impl From<&[u8]> for Elf64Header {
@@ -409,20 +416,113 @@ impl<'a> ElfFile<'a> {
         Some(Elf64DynamicSectionIterator::new(section_slice, num_entries))
     }
 
-    // pub fn get_rela_section(&self) -> Option<Elf64RelaSectionIterator> {
-    //     let rela_entry = self
-    //         .get_dynamic_section()?
-    //         .find(|e| e.tag() == Dyn64EntryTag::Rela)?;
-    //     let rela_size_entry = self
-    //         .get_dynamic_section()?
-    //         .find(|e| e.tag() == Dyn64EntryTag::RelaSz)?;
+    pub fn get_maximum_process_image_size(&self) -> u64 {
+        self.header.get_maximum_process_image_size(self.bytes)
+    }
 
-    //     let section_slice = &self.bytes[rela_entry.value as usize + 0x1000..];
+    /// The caller MUST guarantee that this memory has nothing else in it, and that
+    /// nothing else is using it.
+    ///
+    /// This pointer MUST be 4 KiB page-aligned.
+    pub unsafe fn load_dynamic_file(
+        &self,
+        destination_buffer: &mut [u8],
+        debug: &mut impl core::fmt::Write,
+    ) -> Result<(), Elf64ProcessImageLoadingError> {
+        if destination_buffer.len() < self.get_maximum_process_image_size() as usize {
+            return Err(Elf64ProcessImageLoadingError::InsufficientMemoryError);
+        }
 
-    //     let num_entries = rela_size_entry.value as usize / Rela64Entry::SIZE_IN_BYTES;
+        let destination_address = destination_buffer.as_mut_ptr();
+        let file_start_address = self.bytes.as_ptr();
 
-    //     Some(Elf64RelaSectionIterator::new(section_slice, num_entries))
-    // }
+        let mut rela_section_address = None;
+        let mut rela_section_size = None;
+
+        writeln!(debug, "Loading dynamic file").unwrap();
+
+        for entry in self
+            .get_dynamic_section()
+            .ok_or(Elf64ProcessImageLoadingError::MissingDynamicSectionError)?
+        {
+            match entry.tag() {
+                Dyn64EntryTag::Rela => {
+                    rela_section_address = Some(entry.value);
+                }
+                Dyn64EntryTag::RelaSz => {
+                    rela_section_size = Some(entry.value);
+                }
+                _ => {}
+            }
+        }
+
+        let rela_section_memory_offset = rela_section_address
+            .ok_or(Elf64ProcessImageLoadingError::MissingRelaSectionError)?
+            as usize;
+        let rela_section_address = destination_address.add(rela_section_memory_offset);
+        let rela_section_size = rela_section_size
+            .ok_or(Elf64ProcessImageLoadingError::MissingRelaSizeSectionError)?
+            as usize;
+
+        for segment in self.program_headers() {
+            if segment.segment_type == SegmentType::Load {
+                Self::load_program_segment(
+                    file_start_address,
+                    destination_address,
+                    segment,
+                    debug,
+                )?;
+            }
+        }
+
+        let rela_section_slice =
+            core::slice::from_raw_parts_mut(rela_section_address, rela_section_size);
+        let num_rela_entries = rela_section_size / Rela64Entry::SIZE_IN_BYTES;
+
+        for entry in Elf64RelaSectionIterator::new(rela_section_slice, num_rela_entries) {
+            writeln!(debug, "{}", entry).unwrap();
+        }
+
+        loop {}
+    }
+
+    unsafe fn load_program_segment(
+        file_start_address: *const u8,
+        virtual_memory_offset: *mut u8,
+        segment: Elf64ProgramHeaderEntry,
+        debug: &mut impl core::fmt::Write,
+    ) -> Result<(), Elf64ProcessImageLoadingError> {
+        if (segment.segment_type != SegmentType::Load) {
+            return Err(Elf64ProcessImageLoadingError::LoadNonLoadableSegmentError);
+        }
+
+        let segment_file_ptr = file_start_address.add(segment.offset as usize);
+        let segment_memory_ptr = virtual_memory_offset.add(segment.virtual_address as usize);
+        let num_bytes_to_copy = segment.size_in_file as usize;
+        let memset_start_ptr = segment_memory_ptr.add(num_bytes_to_copy);
+        let num_bytes_to_memset = (segment.size_in_memory - segment.size_in_file) as usize;
+
+        // Copy the bytes that are actually in the file
+        segment_file_ptr.copy_to_nonoverlapping(segment_memory_ptr, num_bytes_to_copy);
+
+        // Memset the other bytes to zero
+        memset_start_ptr.write_bytes(0, num_bytes_to_memset);
+
+        writeln!(debug, "Loaded segment at {:?}", segment_memory_ptr);
+
+        // Hopefully everything went well
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Elf64ProcessImageLoadingError {
+    InsufficientMemoryError,
+    MissingDynamicSectionError,
+    MissingRelaSectionError,
+    MissingRelaSizeSectionError,
+    LoadNonLoadableSegmentError,
 }
 
 pub struct Elf64DynamicSectionIterator<'a> {

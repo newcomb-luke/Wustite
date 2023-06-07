@@ -104,7 +104,7 @@ pub enum ReadFileError {
 pub fn read_file(
     mut file: RegularFile,
     boot_services: &BootServices,
-) -> Result<&mut [u8], ReadFileError> {
+) -> Result<&'static mut [u8], ReadFileError> {
     let mut file_info_buffer = [0u8; 1024];
 
     let file_size = file

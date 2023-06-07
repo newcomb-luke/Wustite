@@ -67,17 +67,25 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     println!("Kernel was valid");
 
     let kernel_load_location = boot_services
-        .allocate_pages(AllocateType::AnyPages, MemoryType::RESERVED, 2)
+        .allocate_pages(AllocateType::AnyPages, MemoryType::RESERVED, 20)
         .unwrap();
+    let kernel_load_location_size = 20 * 4096;
+
+    let kernel_load_location_slice = unsafe {
+        core::slice::from_raw_parts_mut(kernel_load_location as *mut u8, kernel_load_location_size)
+    };
 
     println!("Kernel load location: {kernel_load_location:08x}");
 
-    let dynamic_section = kernel_elf
-        .get_dynamic_section()
-        .expect("Expected DYN ELF file to have DYNAMIC section");
+    {
+        use core::fmt::Write;
+        writeln!(system_table.stdout(), "Hmmm").unwrap();
+    }
 
-    for entry in dynamic_section {
-        println!("  {entry}");
+    unsafe {
+        kernel_elf
+            .load_dynamic_file(kernel_load_location_slice, system_table.stdout())
+            .unwrap();
     }
 
     // Buys us 5 minutes to look at the output of our horrible code
