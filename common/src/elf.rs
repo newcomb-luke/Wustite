@@ -420,6 +420,10 @@ impl<'a> ElfFile<'a> {
         self.header.get_maximum_process_image_size(self.bytes)
     }
 
+    pub fn entry_point(&self) -> u64 {
+        self.header.entry_point
+    }
+
     /// The caller MUST guarantee that this memory has nothing else in it, and that
     /// nothing else is using it.
     ///
@@ -427,7 +431,6 @@ impl<'a> ElfFile<'a> {
     pub unsafe fn load_dynamic_file(
         &self,
         destination_buffer: &mut [u8],
-        debug: &mut impl core::fmt::Write,
     ) -> Result<(), Elf64ProcessImageLoadingError> {
         if destination_buffer.len() < self.get_maximum_process_image_size() as usize {
             return Err(Elf64ProcessImageLoadingError::InsufficientMemoryError);
@@ -438,8 +441,6 @@ impl<'a> ElfFile<'a> {
 
         let mut rela_section_address = None;
         let mut rela_section_size = None;
-
-        writeln!(debug, "Loading dynamic file").unwrap();
 
         for entry in self
             .get_dynamic_section()
@@ -466,12 +467,7 @@ impl<'a> ElfFile<'a> {
 
         for segment in self.program_headers() {
             if segment.segment_type == SegmentType::Load {
-                Self::load_program_segment(
-                    file_start_address,
-                    destination_address,
-                    segment,
-                    debug,
-                )?;
+                Self::load_program_segment(file_start_address, destination_address, segment)?;
             }
         }
 
@@ -480,19 +476,18 @@ impl<'a> ElfFile<'a> {
         let num_rela_entries = rela_section_size / Rela64Entry::SIZE_IN_BYTES;
 
         for entry in Elf64RelaSectionIterator::new(rela_section_slice, num_rela_entries) {
-            writeln!(debug, "{}", entry).unwrap();
+            Self::perform_relocation(destination_address, entry)?;
         }
 
-        loop {}
+        Ok(())
     }
 
     unsafe fn load_program_segment(
         file_start_address: *const u8,
         virtual_memory_offset: *mut u8,
         segment: Elf64ProgramHeaderEntry,
-        debug: &mut impl core::fmt::Write,
     ) -> Result<(), Elf64ProcessImageLoadingError> {
-        if (segment.segment_type != SegmentType::Load) {
+        if segment.segment_type != SegmentType::Load {
             return Err(Elf64ProcessImageLoadingError::LoadNonLoadableSegmentError);
         }
 
@@ -508,9 +503,33 @@ impl<'a> ElfFile<'a> {
         // Memset the other bytes to zero
         memset_start_ptr.write_bytes(0, num_bytes_to_memset);
 
-        writeln!(debug, "Loaded segment at {:?}", segment_memory_ptr);
-
         // Hopefully everything went well
+
+        Ok(())
+    }
+
+    unsafe fn perform_relocation(
+        virtual_memory_offset: *mut u8,
+        rela_entry: Rela64Entry,
+    ) -> Result<(), Elf64ProcessImageLoadingError> {
+        // This is the only type of relocation we support right now, it is the only
+        // type I have seen in the wild so far
+        if rela_entry.ty() != Rela64EntryType::Relative {
+            return Err(
+                Elf64ProcessImageLoadingError::UnsupportedRelocationTypeError(rela_entry.ty()),
+            );
+        }
+
+        let entry_position_in_memory =
+            virtual_memory_offset.add(rela_entry.offset as usize) as *mut u64;
+
+        // R_X86_64_RELATIVE relocations are just B + A
+        // Where B is the virtual memory offset it is loaded at, and A is the entry's addend value
+        // They are 64-bit values.
+
+        let data_to_store = virtual_memory_offset as u64 + rela_entry.addend;
+
+        entry_position_in_memory.write(data_to_store);
 
         Ok(())
     }
@@ -523,6 +542,7 @@ pub enum Elf64ProcessImageLoadingError {
     MissingRelaSectionError,
     MissingRelaSizeSectionError,
     LoadNonLoadableSegmentError,
+    UnsupportedRelocationTypeError(Rela64EntryType),
 }
 
 pub struct Elf64DynamicSectionIterator<'a> {
@@ -693,7 +713,7 @@ impl Display for Dyn64Entry {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rela64EntryType {
     None,
     Word64,
