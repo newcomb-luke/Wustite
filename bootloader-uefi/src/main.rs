@@ -13,10 +13,14 @@ use uefi::{
     },
 };
 use uefi_services::println;
+use x86_64::{
+    structures::paging::{PageTable, PageTableFlags},
+    PhysAddr,
+};
 
 use crate::{
     filesystem::{find_file, read_file},
-    memory::get_memory_map,
+    memory::{allocate_memory_map_storage, construct_memory_map},
 };
 
 mod filesystem;
@@ -46,12 +50,9 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         initramfs_read_location.as_ptr()
     );
 
-    load_kernel(boot_services);
+    let kernel_entry_point = load_kernel(boot_services);
 
-    // Buys us 5 minutes to look at the output of our horrible code
-    loop {}
-
-    let (first_region, num_regions) = get_memory_map(boot_services).unwrap();
+    println!("Kernel entry point: {:08x}", kernel_entry_point);
 
     let acpi_rsdp = system_table
         .config_table()
@@ -62,13 +63,55 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     println!("Address of ACPI RSDP table: {:?}", acpi_rsdp);
 
-    let _ = system_table.exit_boot_services();
+    let memory_regions = allocate_memory_map_storage(boot_services).unwrap();
+
+    let (_, uefi_memory_map) = system_table.exit_boot_services();
+
+    let (first_region, num_regions) =
+        construct_memory_map(memory_regions, uefi_memory_map).unwrap();
+
+    loop {}
 
     Status::SUCCESS
 }
 
+// We use the boot services allocator to allocate memory for the page tables
+// that we will enable once we exit the boot services
+fn init_paging(boot_services: &BootServices) -> Result<(), uefi::Error> {
+    const NUM_PAGE_TABLES_USED: usize = 10;
+
+    unsafe {
+        let page_tables_ptr = boot_services.allocate_pages(
+            AllocateType::AnyPages,
+            MemoryType::RESERVED,
+            NUM_PAGE_TABLES_USED,
+        )? as *mut PageTable;
+
+        let pml4t = page_tables_ptr.add(0).as_mut().unwrap();
+        pml4t.zero();
+
+        let pdpt_ptr = page_tables_ptr.add(1);
+        let pdpt = pdpt_ptr.as_mut().unwrap();
+        pdpt.zero();
+
+        let pml4t_first = &mut pml4t[0];
+        pml4t_first.set_addr(
+            PhysAddr::new(pdpt_ptr as u64),
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+        );
+
+        let pml4t_phys = &mut pml4t[3];
+        pml4t_phys.set_addr(
+            PhysAddr::new(0),
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+        );
+    }
+
+    Ok(())
+}
+
 // This is the high-level function, so when it encounters an unrecoverable error, it just panics
-fn load_kernel(boot_services: &BootServices) {
+fn load_kernel(boot_services: &BootServices) -> u64 {
     let kernel_file = find_file(KERNEL_PATH, boot_services).unwrap();
 
     println!("Found {}", KERNEL_PATH);
@@ -101,6 +144,8 @@ fn load_kernel(boot_services: &BootServices) {
         )
         .unwrap();
 
+    // SAFETY: allocate_pages gives us back 4KiB-aligned pointers,
+    // and we used the same size as we used to allocate, as we are providing to this function
     let kernel_load_location_slice = unsafe {
         core::slice::from_raw_parts_mut(kernel_load_location as *mut u8, kernel_required_bytes)
     };
@@ -113,5 +158,5 @@ fn load_kernel(boot_services: &BootServices) {
             .unwrap();
     }
 
-    println!("Kernel entry point: {:08x}", kernel_elf.entry_point());
+    kernel_elf.entry_point()
 }

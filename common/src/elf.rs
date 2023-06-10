@@ -756,7 +756,6 @@ impl Display for Rela64EntryType {
             Self::GlobDat => "R_X84_64_GLOB_DAT",
             Self::JumpSlot => "R_X84_64_JUMP_SLOT",
             Self::Relative => "R_X84_64_RELATIVE",
-            Self::GlobDat => "R_X84_64_GLOB_DAT",
             Self::Unknown(v) => {
                 return f.write_fmt(format_args!("Unknown ({v})"));
             }

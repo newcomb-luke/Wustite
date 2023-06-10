@@ -7,3 +7,4 @@ edition.workspace = true
 uefi = "0.22"
 uefi-services = "0.19"
 common = { path = "../common" }
+x86_64 = "0.14.10"

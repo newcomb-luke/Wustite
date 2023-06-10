@@ -6,7 +6,6 @@ use uefi::{
 };
 
 use common::memory::{MemoryRegion, MemoryRegionType};
-use uefi_services::println;
 
 /// To make our lives easier (no reallocation) we are going to just allocate
 /// a fixed number of spots for unified memory regions and hope for the best.
@@ -22,46 +21,31 @@ const MAX_NUM_REGIONS: usize = 256;
 /// AddressRangeMemory and must not report using AddressRangePersistentMemory.
 const IGNORE_BEFORE: u64 = 0x100000;
 
-/// Gets the memory map from the firmware and allocates a spot in memory for it.
-///
-/// This function maps the UEFI memory map entries to our own MemoryRegions, and returns
-/// a pointer to the first one, along with the number of regions. They are sorted,
-/// and "unified" (no overlapping regions, adjacent regions are merged).
-///
-pub fn get_memory_map(
+pub fn allocate_memory_map_storage(
     boot_services: &BootServices,
-) -> Result<(*const MemoryRegion, u64), GetMemoryMapError> {
-    let before_size = boot_services.memory_map_size();
-
-    // We want to anticipate a few extra entries here, because of our allocation
-    // to store the actual map
-    // WORST case is 10 new entries I'd imagine, (QEMU, I'm looking at you)
-    const FUDGE_AMOUNT: usize = 10;
-
-    let allocation_size = before_size.map_size + before_size.entry_size * FUDGE_AMOUNT;
-
-    let buffer_start = boot_services.allocate_pool(MemoryType::LOADER_DATA, allocation_size)?;
-
-    let buffer = unsafe { core::slice::from_raw_parts_mut(buffer_start, allocation_size) };
-
-    let mut uefi_memory_map = boot_services.memory_map(buffer)?;
-
-    // Nice.
-    uefi_memory_map.sort();
-
-    convert_map(boot_services, uefi_memory_map)
-}
-
-fn convert_map(
-    boot_services: &BootServices,
-    uefi_memory_map: MemoryMap,
-) -> Result<(*const MemoryRegion, u64), GetMemoryMapError> {
+) -> Result<MemoryRegions, uefi::Error> {
     let regions_allocation_size = MAX_NUM_REGIONS * core::mem::size_of::<MemoryRegion>();
 
     let regions_buffer_start =
         boot_services.allocate_pool(MemoryType::LOADER_DATA, regions_allocation_size)?;
 
-    let mut regions = MemoryRegions::new(regions_buffer_start as *mut MemoryRegion);
+    Ok(MemoryRegions::new(
+        regions_buffer_start as *mut MemoryRegion,
+    ))
+}
+
+/// Consumes the memory map
+///
+/// This function maps the UEFI memory map entries to our own MemoryRegions, and returns
+/// a pointer to the first one, along with the number of regions. They are sorted,
+/// and "unified" (no overlapping regions, adjacent regions are merged).
+///
+pub fn construct_memory_map(
+    mut regions: MemoryRegions,
+    mut uefi_memory_map: MemoryMap<'static>,
+) -> Result<(*const MemoryRegion, u64), GetMemoryMapError> {
+    // Nice.
+    uefi_memory_map.sort();
 
     let mut unified = StackMemoryRegions::new();
 
@@ -76,15 +60,6 @@ fn convert_map(
     }
 
     regions.extend_from(unified.entries())?;
-
-    println!("Memory map: ");
-
-    for entry in regions.entries() {
-        println!(
-            "{:08x} -> {:08x} : {:?}",
-            entry.start_addr, entry.end_addr, entry.ty
-        );
-    }
 
     for entry in regions.entries() {
         for other in regions.entries() {
@@ -255,7 +230,7 @@ impl Drop for StackMemoryRegions {
     }
 }
 
-struct MemoryRegions {
+pub struct MemoryRegions {
     start: *mut MemoryRegion,
     num_regions: usize,
 }
