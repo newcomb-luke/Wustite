@@ -4,7 +4,12 @@
 
 use core::panic;
 
-use common::elf::{ElfFile, FileType};
+use common::{
+    BootInfo,
+    KernelEntry,
+    memory::MemoryRegion,
+    elf::{ElfFile, FileType}
+};
 use uefi::{
     prelude::*,
     table::{
@@ -26,8 +31,8 @@ use crate::{
 mod filesystem;
 mod memory;
 
-const KERNEL_PATH: &str = "KERNEL.O";
-const INITRAMFS_PATH: &str = "INITRAMF.IMG";
+const KERNEL_PATH: &str = "kernel.o";
+const INITRAMFS_PATH: &str = "initramfs.img";
 
 #[entry]
 fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
@@ -63,12 +68,35 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     println!("Address of ACPI RSDP table: {:?}", acpi_rsdp);
 
+    let boot_info_location = boot_services
+        .allocate_pool(MemoryType::LOADER_DATA, ::core::mem::size_of::<BootInfo>()).unwrap() as *mut BootInfo;
+
+    println!("Address of Boot Info: {:?}", boot_info_location);
+
     let memory_regions = allocate_memory_map_storage(boot_services).unwrap();
 
+    println!("Hopefully this works!");
+
+    // EXITING BOOT SERVICES -- CAN NO LONGER CALL ANY UEFI ROUTINES
     let (_, uefi_memory_map) = system_table.exit_boot_services();
 
     let (first_region, num_regions) =
         construct_memory_map(memory_regions, uefi_memory_map).unwrap();
+
+    unsafe {
+        boot_info_location.write_bytes(0, 1);
+    }
+
+    unsafe {
+        *boot_info_location = BootInfo {
+            memory_regions_start: first_region,
+            memory_regions_count: num_regions,
+            initramfs_address: initramfs_read_location.as_mut_ptr(),
+            initramfs_length: initramfs_read_location.len() as u64,
+            acpi_rsdp_address: acpi_rsdp,
+            physical_memory_offset: 0
+        };
+    }
 
     loop {}
 

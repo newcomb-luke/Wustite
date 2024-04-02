@@ -32,7 +32,10 @@ pub fn u64_from_slice(bytes: &[u8]) -> u64 {
 pub struct BootInfo {
     pub memory_regions_start: *const MemoryRegion,
     pub memory_regions_count: u64,
-    pub initramfs_location: *const u8,
+    pub initramfs_address: *const u8,
     pub initramfs_length: u64,
+    pub acpi_rsdp_address: *const u8,
     pub physical_memory_offset: u64,
 }
+
+pub type KernelEntry = unsafe extern "C" fn(*const BootInfo);

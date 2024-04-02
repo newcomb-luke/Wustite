@@ -1,3 +1,5 @@
+SHELL=/bin/bash
+
 .PHONY: all clean bootloader kernel
 
 all: hard_disk
@@ -6,10 +8,10 @@ BUILD_DIR=$(abspath build)
 TARGET_DIR=$(abspath target)
 
 UEFI_PARTITION=$(BUILD_DIR)/uefi-partition.img
-UEFI_PARTITION_SIZE=91669
+UEFI_PARTITION_SIZE=131072
 
-HARD_DISK_IMG=$(BUILD_DIR)/hard_disk.img
-HARD_DISK_SIZE=93750
+HARD_DISK_IMG=$(BUILD_DIR)/hard-disk.img
+HARD_DISK_SIZE=264192
 
 INITRAMFS=$(BUILD_DIR)/ramfs.img
 INITRAMFS_SIZE=20480
@@ -53,7 +55,8 @@ efi_partition: $(UEFI_PARTITION)
 $(UEFI_PARTITION):
 	mkdir -p $(BUILD_DIR)
 	dd if=/dev/zero of=$(BUILD_DIR)/uefi-partition.img bs=512 count=$(UEFI_PARTITION_SIZE)
-	mformat -i $(UEFI_PARTITION) -h 32 -t 32 -n 64 -c 1
+	# mformat -i $(UEFI_PARTITION) -h 32 -t 32 -n 64 -c 1
+	mkfs.fat -F32 ${UEFI_PARTITION} -n "EFI System"
 	mmd -i $(UEFI_PARTITION) "::EFI"
 	mmd -i $(UEFI_PARTITION) "::EFI/BOOT"
 
@@ -70,7 +73,7 @@ $(HARD_DISK_IMG):
 	mkdir -p $(BUILD_DIR)
 	dd if=/dev/zero of=$(HARD_DISK_IMG) bs=512 count=$(HARD_DISK_SIZE)
 	parted $(HARD_DISK_IMG) -s -a minimal mklabel gpt
-	parted $(HARD_DISK_IMG) -s -a minimal mkpart EFI FAT16 $(GPT_OFFSET)s 93716s
+	parted $(HARD_DISK_IMG) -s -a minimal mkpart EFI FAT32 $(GPT_OFFSET)s $$(( $(GPT_OFFSET) + $(UEFI_PARTITION_SIZE) ))s
 	parted $(HARD_DISK_IMG) -s -a minimal toggle 1 boot
 
 # 
@@ -93,8 +96,8 @@ initramfs: $(INITRAMFS)
 
 $(INITRAMFS): efi_partition
 	dd if=/dev/zero of=$(INITRAMFS) bs=512 count=$(INITRAMFS_SIZE)
-	mkfs.fat -F 16 -n "INITRAMF" $(INITRAMFS)
-	mcopy -i $(UEFI_PARTITION) $(INITRAMFS) "::INITRAMF.IMG" -o
+	mkfs.fat -F 32 -n "INITRAMF" $(INITRAMFS)
+	mcopy -i $(UEFI_PARTITION) $(INITRAMFS) "::initramfs.img" -o
 
 #
 # Kernel modules
@@ -120,7 +123,7 @@ $(BUILD_DIR)/OVMF_VARS.fd:
 	cp /usr/share/edk2-ovmf/x64/OVMF_VARS.fd $(BUILD_DIR)
 
 run: hard_disk firmware
-	qemu-system-x86_64 --enable-kvm -cpu host,pdpe1gb=on -m 2G \
+	qemu-system-x86_64 --enable-kvm -cpu host -m 2G \
 		-device vmware-svga \
 		-drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
 		-drive if=pflash,format=raw,file=$(BUILD_DIR)/OVMF_VARS.fd \
