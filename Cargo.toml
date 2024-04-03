@@ -1,5 +1,5 @@
 [workspace]
-members = ["bootloader", "bootloader-uefi", "kernel", "common"]
+members = ["bootloader", "bootloader-uefi", "kernel", "common", "ext4-core"]
 exclude = ["modules/"]
 resolver = "2"
 

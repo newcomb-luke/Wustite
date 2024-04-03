@@ -1,0 +1,6 @@
+[package]
+name = "ext4-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
