@@ -2,10 +2,6 @@
 
 use memory::MemoryRegion;
 
-pub const MAXIMUM_SUPPORTED_MEMORY: u64 = 0x200000000; // 8 GiB
-
-pub const PHYS_MAP_VIRTUAL_OFFSET: u64 = 0x18000000000;
-
 pub mod elf;
 pub mod memory;
 

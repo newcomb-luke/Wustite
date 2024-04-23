@@ -9,30 +9,22 @@ A custom toy operating system written mostly in the Rust programming language. T
 
 # Roadmap
 
-- [x] Bootloader
-  - [x] Stage 1
-    - [x] FAT12 header in boot sector
-    - [x] Disk read
-    - [x] Screen BIOS print routines
-    - [x] Minimal FAT12 read support
-    - [x] Second stage binary file loading
-  - [x] Stage 2
-    - [x] Disk read
-    - [x] BIOS print routines
-    - [x] Minimal FAT12 read support
-      - [x] Root directory lookup
-      - [x] FAT lookup
-      - [x] Read arbitrary file into memory
-    - [x] Minimal ELF executable loading
-    - [x] Protected mode entry
-    - [x] Long mode entry
-      - [x] Enabling PAE
-      - [x] Set 64-bit page table
-      - [x] Set long mode enable bit
-      - [x] Enable paging
-      - [x] Set up 64-bit GDT
-    - [x] BIOS memory map request
-    - [x] Providing boot info to kernel
+- [ ] Bootloader
+	- [x] Read kernel from disk
+	- [x] Read initramfs from disk
+	- [x] Load kernel
+		- [x] Read ELF files
+		- [x] Perform relocations
+	- [x] Get ACPI RSDP
+	- [x] Write kernel boot info to memory
+	- [x] Get memory map
+	- [x] Initialize kernel paging
+		- [x] Bootloader code identity mapping
+		- [x] Physical memory mapping
+		- [ ] Higher-Half kernel mapping
+		- [x] Kernel stack mapping
+	- [x] Exit boot services
+	- [ ] Jump to kernel
 - [ ] Kernel
   - [x] Bare bones printing
     - [x] VGA text buffer support
