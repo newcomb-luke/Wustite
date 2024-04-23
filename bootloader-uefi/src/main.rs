@@ -19,7 +19,7 @@ use uefi::{
 };
 use uefi_services::println;
 use x86_64::{
-    structures::paging::{PageTable, PageTableFlags},
+    structures::paging::{PageTable, PageTableFlags, frame::PhysFrame},
     PhysAddr,
 };
 
@@ -30,6 +30,12 @@ use crate::{
 
 mod filesystem;
 mod memory;
+
+macro_rules! u64_to_fp {
+    ($address:expr, $t:ty) => {
+        core::mem::transmute::<*const (), $t>($address as _)
+    };
+}
 
 const KERNEL_PATH: &str = "kernel.o";
 const INITRAMFS_PATH: &str = "initramfs.img";
@@ -42,6 +48,8 @@ const KERNEL_STACK_PAGES_REQUIRED: usize = KERNEL_STACK_SIZE.div_ceil(4096) as u
 
 // Upper-half kernel mapping
 const KERNEL_VIRTUAL_OFFSET: u64 = 0xC0000000;
+const KERNEL_PDPT_INDEX: usize = 3;
+const KERNEL_MAX_SIZE: usize = 1024 * 1024 * 2; // 2 MiB
 
 const PHYS_MAP_VIRTUAL_OFFSET: u64 = 0x18000000000;
 const PHYS_MAP_PML4T_INDEX: usize = 3;
@@ -69,9 +77,7 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         initramfs_read_location.as_ptr()
     );
 
-    let kernel_entry_point = load_kernel(boot_services);
-
-    println!("Kernel entry point: {:08x}", kernel_entry_point);
+    let (kernel_read_location, kernel_load_location) = read_and_allocate_kernel(boot_services);
 
     let acpi_rsdp = system_table
         .config_table()
@@ -87,11 +93,11 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     println!("Address of Boot Info: {:?}", boot_info_location);
 
-    println!("Allocating kernel stack");
+    let kernel_stack_location = allocate_kernel_stack(boot_services);
 
     println!("Initializing paging");
 
-    init_paging(boot_services).unwrap();
+    let pml4t_address = init_paging(boot_services, kernel_stack_location, kernel_load_location.as_ptr() as u64).unwrap();
 
     let memory_regions = allocate_memory_map_storage(boot_services).unwrap();
 
@@ -102,6 +108,9 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     let (first_region, num_regions) =
         construct_memory_map(memory_regions, uefi_memory_map).unwrap();
+
+    // Finally load the kernel
+    let kernel_entry_point = load_kernel(kernel_read_location, kernel_load_location);
 
     unsafe {
         boot_info_location.write_bytes(0, 1);
@@ -114,8 +123,19 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             initramfs_address: initramfs_read_location.as_mut_ptr(),
             initramfs_length: initramfs_read_location.len() as u64,
             acpi_rsdp_address: acpi_rsdp,
-            physical_memory_offset: 0
+            physical_memory_offset: PHYS_MAP_VIRTUAL_OFFSET
         };
+    }
+
+    let kernel_entry = unsafe {
+        u64_to_fp!(kernel_entry_point, KernelEntry)
+    };
+
+    switch_paging(pml4t_address);
+
+    // Finally switch to the kernel!
+    unsafe {
+        kernel_entry(boot_info_location);
     }
 
     loop {}
@@ -123,15 +143,26 @@ fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     Status::SUCCESS
 }
 
+fn switch_paging(pml4t_address: u64) {
+    unsafe {
+        let flags = ::x86_64::registers::control::Cr3::read().1;
+        let phys_addr = PhysAddr::new(pml4t_address);
+        let phys_frame = PhysFrame::from_start_address(phys_addr).unwrap();
+        ::x86_64::registers::control::Cr3::write(phys_frame, flags);
+    }
+}
+
 // We use the boot services allocator to allocate memory for the page tables
 // that we will enable once we exit the boot services
-fn init_paging(boot_services: &BootServices, kernel_stack_location: *mut u8) -> Result<(), uefi::Error> {
+fn init_paging(boot_services: &BootServices, kernel_stack_location: u64, kernel_load_location: u64) -> Result<u64, uefi::Error> {
     const NUM_MAP_PAGE_TABLES: usize = 8;
     // One for the PDPT, one for the PDT, and one for the PT
-    const NUM_STACK_PAGE_TABLES: usie = 3;
+    const NUM_STACK_PAGE_TABLES: usize = 3;
+    const NUM_KERNEL_PAGE_TABLES: usize = 1;
     // One for PML4T, an identify mapped PDPT, and a physical PDPT
     const NUM_COMMON_PAGE_TABLES: usize = 3;
     const NUM_PAGE_TABLES_USED: usize = NUM_COMMON_PAGE_TABLES +
+        NUM_KERNEL_PAGE_TABLES +
         NUM_STACK_PAGE_TABLES +
         (NUM_MAP_PAGE_TABLES * 2);
 
@@ -142,10 +173,11 @@ fn init_paging(boot_services: &BootServices, kernel_stack_location: *mut u8) -> 
             NUM_PAGE_TABLES_USED,
         )? as *mut PageTable;
 
-        let pml4t = page_tables_ptr.add(0).as_mut().unwrap();
+        let pml4t_ptr = page_tables_ptr.add(0);
+        let pml4t = pml4t_ptr.as_mut().unwrap();
         pml4t.zero();
 
-        let phys_pdpt_ptr = pml4t.add(1);
+        let phys_pdpt_ptr = page_tables_ptr.add(1);
         let phys_pdpt = phys_pdpt_ptr.as_mut().unwrap();
         phys_pdpt.zero();
 
@@ -165,7 +197,11 @@ fn init_paging(boot_services: &BootServices, kernel_stack_location: *mut u8) -> 
         let stack_pt = stack_pt_ptr.as_mut().unwrap();
         stack_pt.zero();
 
-        let ident_page_directories_start = stack_pt_ptr.add(1);
+        let kernel_pt_ptr = stack_pt_ptr.add(1);
+        let kernel_pt = kernel_pt_ptr.as_mut().unwrap();
+        kernel_pt.zero();
+
+        let ident_page_directories_start = kernel_pt_ptr.add(1);
         let phys_page_directories_start = ident_page_directories_start.add(NUM_MAP_PAGE_TABLES);
 
         // Initialize the page map level 4 table
@@ -202,7 +238,7 @@ fn init_paging(boot_services: &BootServices, kernel_stack_location: *mut u8) -> 
 
         // Initialize the kernel stack page table
         for entry in 0..KERNEL_STACK_PAGES_REQUIRED {
-            let addr = kernel_stack_location as u64 + (entry * 4096) as u64;
+            let addr = kernel_stack_location + (entry * 4096) as u64;
             let entry = &mut stack_pt[entry];
             entry.set_addr(
                 PhysAddr::new(addr),
@@ -210,15 +246,16 @@ fn init_paging(boot_services: &BootServices, kernel_stack_location: *mut u8) -> 
             );
         }
 
+        const TWO_MEGABYTES: u64 = 2 * 1024 * 1024;
+        const FOUR_KILOBYTES: u64 = 4 * 1024;
+        const NUM_ENTRIES_PER_TABLE: usize = 512;
+
         // Initialize the identity mapping 2 MiB page directory tables
         for page_table in 0..NUM_MAP_PAGE_TABLES {
-            const TWO_MEGABYTES: u64 = 2 * 1024 * 1024;
-            const NUM_ENTRIES_PER_TABLE: usize = 512;
-
             // Initialize the corresponding entries in the PDPT
             let ident_pdpe = &mut ident_pdpt[page_table];
             let pdpe_addr = ident_page_directories_start as u64 + (page_table * 4096) as u64;
-            phys_pdpe.set_addr(
+            ident_pdpe.set_addr(
                 PhysAddr::new(pdpe_addr),
                 PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
             );
@@ -238,9 +275,6 @@ fn init_paging(boot_services: &BootServices, kernel_stack_location: *mut u8) -> 
 
         // Initialize the physical memory mapping 2 MiB page directory tables
         for page_table in 0..NUM_MAP_PAGE_TABLES {
-            const TWO_MEGABYTES: u64 = 2 * 1024 * 1024;
-            const NUM_ENTRIES_PER_TABLE: usize = 512;
-
             // Initialize the corresponding entries in the PDPT
             let phys_pdpe = &mut phys_pdpt[page_table];
             let pdpe_addr = phys_page_directories_start as u64 + (page_table * 4096) as u64;
@@ -261,13 +295,34 @@ fn init_paging(boot_services: &BootServices, kernel_stack_location: *mut u8) -> 
                 );
             }
         }
-    }
 
-    Ok(())
+        // The kernel is actually loaded sort of in the middle of the identity-mapped region
+        // So we will have to modify those tables
+
+        // This maps KERNEL_VIRTUAL_OFFSET access to accesses to wherever the kernel was loaded
+
+        let kernel_pdte0 = &mut (phys_page_directories_start.add(KERNEL_PDPT_INDEX)
+                               .as_mut().unwrap())[0];
+        // Modify the page directory table 0th entry to point to our kernel page table instead
+        kernel_pdte0.set_addr(
+            PhysAddr::new(kernel_pt_ptr as u64),
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE
+        );
+
+        for (idx, entry) in kernel_pt.iter_mut().enumerate() {
+            let addr = kernel_load_location + ((idx as u64) * FOUR_KILOBYTES);
+            entry.set_addr(
+                PhysAddr::new(addr),
+                PageTableFlags::PRESENT | PageTableFlags::WRITABLE
+            );
+        }
+
+        Ok(pml4t_ptr as u64)
+    }
 }
 
 // This is the high-level function, so when it encounters an unrecoverable error, it just panics
-fn read_and_allocate_kernel(boot_services: &BootServices) -> &'static mut u8 {
+fn read_and_allocate_kernel(boot_services: &BootServices) -> (&'static mut [u8], &'static mut [u8]) {
     let kernel_file = find_file(KERNEL_PATH, boot_services).unwrap();
 
     println!("Found {}", KERNEL_PATH);
@@ -275,6 +330,10 @@ fn read_and_allocate_kernel(boot_services: &BootServices) -> &'static mut u8 {
     let kernel_read_location = read_file(kernel_file, boot_services).unwrap();
 
     println!("Read kernel at: {:?}", kernel_read_location.as_ptr());
+
+    if kernel_read_location.len() > KERNEL_MAX_SIZE {
+        panic!("Kernel is larger than 2 MiB. Unsupported");
+    }
 
     let kernel_elf = match ElfFile::new_validated(kernel_read_location) {
         Ok(elf) => elf,
@@ -308,17 +367,17 @@ fn read_and_allocate_kernel(boot_services: &BootServices) -> &'static mut u8 {
 
     println!("Kernel load location: {kernel_load_location:08x}");
 
-    kernel_load_location_slice
+    (kernel_read_location, kernel_load_location_slice)
 }
 
 // This is the high-level function, so when it encounters an unrecoverable error, it just panics
-fn load_kernel(kernel_load_location_slice: &'static mut u8) -> u64 {
-    let kernel_elf = ElfFile::new_validated(kernel_read_location)
+fn load_kernel(kernel_read_location_slice: &'static mut [u8], kernel_load_location_slice: &'static mut [u8]) -> u64 {
+    let kernel_elf = ElfFile::new_validated(kernel_read_location_slice)
         .expect("BOOTLOADER LOGIC ERROR: CALLED LOAD_KERNEL ON NON-ELF FILE");
 
     unsafe {
         kernel_elf
-            .load_dynamic_file(kernel_load_location_slice)
+            .load_dynamic_file(kernel_load_location_slice, KERNEL_VIRTUAL_OFFSET)
             .unwrap();
     }
 
@@ -329,7 +388,7 @@ fn load_kernel(kernel_load_location_slice: &'static mut u8) -> u64 {
 fn allocate_kernel_stack(boot_services: &BootServices) -> u64 {
     println!("Allocating kernel stack");
 
-    let num_pages = KERNEL_STACK_SIZE.div_ceil(4096);
+    let num_pages = KERNEL_STACK_SIZE.div_ceil(4096) as usize;
 
     let stack_address = boot_services.allocate_pages(
         AllocateType::AnyPages,

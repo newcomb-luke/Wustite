@@ -431,6 +431,7 @@ impl<'a> ElfFile<'a> {
     pub unsafe fn load_dynamic_file(
         &self,
         destination_buffer: &mut [u8],
+        load_virtual_address: u64
     ) -> Result<(), Elf64ProcessImageLoadingError> {
         if destination_buffer.len() < self.get_maximum_process_image_size() as usize {
             return Err(Elf64ProcessImageLoadingError::InsufficientMemoryError);
@@ -476,7 +477,7 @@ impl<'a> ElfFile<'a> {
         let num_rela_entries = rela_section_size / Rela64Entry::SIZE_IN_BYTES;
 
         for entry in Elf64RelaSectionIterator::new(rela_section_slice, num_rela_entries) {
-            Self::perform_relocation(destination_address, entry)?;
+            Self::perform_relocation(destination_address, load_virtual_address, entry)?;
         }
 
         Ok(())
@@ -509,7 +510,8 @@ impl<'a> ElfFile<'a> {
     }
 
     unsafe fn perform_relocation(
-        virtual_memory_offset: *mut u8,
+        actual_memory_offset: *mut u8,
+        virtual_memory_offset: u64,
         rela_entry: Rela64Entry,
     ) -> Result<(), Elf64ProcessImageLoadingError> {
         // This is the only type of relocation we support right now, it is the only
@@ -521,13 +523,13 @@ impl<'a> ElfFile<'a> {
         }
 
         let entry_position_in_memory =
-            virtual_memory_offset.add(rela_entry.offset as usize) as *mut u64;
+            actual_memory_offset.add(rela_entry.offset as usize) as *mut u64;
 
         // R_X86_64_RELATIVE relocations are just B + A
         // Where B is the virtual memory offset it is loaded at, and A is the entry's addend value
         // They are 64-bit values.
 
-        let data_to_store = virtual_memory_offset as u64 + rela_entry.addend;
+        let data_to_store = virtual_memory_offset + rela_entry.addend;
 
         entry_position_in_memory.write(data_to_store);
 

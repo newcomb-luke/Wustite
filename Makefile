@@ -27,7 +27,7 @@ KERNEL_RUST_FLAGS=-C code-model=kernel -C relocation-model=pie
 KERNEL_BUILD_STD=core,alloc
 KERNEL_TARGET=x86_64-none-eabi
 KERNEL_TARGET_NAME=$(KERNEL_TARGET).json
-KERNEL_OUTPUT=$(TARGET_DIR)/$(KERNEL_TARGET)/release/kernel
+KERNEL_OUTPUT=$(TARGET_DIR)/$(KERNEL_TARGET)/debug/kernel
 
 MODULE_RUST_FLAGS=-C code-model=kernel -C relocation-model=pie
 MODULE_BUILD_STD=core
@@ -84,7 +84,7 @@ kernel: $(BUILD_DIR)/kernel.o
 
 $(BUILD_DIR)/kernel.o: bootloader FORCE
 	mkdir -p $(BUILD_DIR)
-	RUSTFLAGS="$(KERNEL_RUST_FLAGS)" cargo build --release -Z build-std=$(KERNEL_BUILD_STD) --target=$(KERNEL_TARGET_NAME) --package=kernel
+	RUSTFLAGS="$(KERNEL_RUST_FLAGS)" cargo build -Z build-std=$(KERNEL_BUILD_STD) --target=$(KERNEL_TARGET_NAME) --package=kernel
 	cp $(KERNEL_OUTPUT) $(BUILD_DIR)/kernel.o
 	mcopy -i $(UEFI_PARTITION) $(BUILD_DIR)/kernel.o "::kernel.o" -o
 

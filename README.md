@@ -21,9 +21,10 @@ A custom toy operating system written mostly in the Rust programming language. T
 	- [x] Initialize kernel paging
 		- [x] Bootloader code identity mapping
 		- [x] Physical memory mapping
-		- [ ] Higher-Half kernel mapping
+		- [x] Higher-Half kernel mapping
 		- [x] Kernel stack mapping
 	- [x] Exit boot services
+	- [ ] Set kernel stack as active stack
 	- [ ] Jump to kernel
 - [ ] Kernel
   - [x] Bare bones printing
