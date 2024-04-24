@@ -9,7 +9,7 @@ A custom toy operating system written mostly in the Rust programming language. T
 
 # Roadmap
 
-- [ ] Bootloader
+- [x] Bootloader
 	- [x] Read kernel from disk
 	- [x] Read initramfs from disk
 	- [x] Load kernel
@@ -18,31 +18,42 @@ A custom toy operating system written mostly in the Rust programming language. T
 	- [x] Get ACPI RSDP
 	- [x] Write kernel boot info to memory
 	- [x] Get memory map
+    - [x] Memory Map Coalescence
 	- [x] Initialize kernel paging
 		- [x] Bootloader code identity mapping
 		- [x] Physical memory mapping
 		- [x] Higher-Half kernel mapping
 		- [x] Kernel stack mapping
 	- [x] Exit boot services
-	- [ ] Set kernel stack as active stack
-	- [ ] Jump to kernel
+	- [x] Set kernel stack as active stack
+	- [x] Jump to kernel
 - [ ] Kernel
-  - [x] Bare bones printing
-    - [x] VGA text buffer support
-    - [x] Print macros
-  - [x] Panic handling
-  - [x] Interrupt handling
-  - [x] Kernel Paging Setup
-  - [x] Memory Map Coalescence
-  - [x] Kernel Frame Allocation
-  - [x] Kernel Page Table Allocation
+  - [ ] Bare bones printing
+    - [x] Serial port 0 driver
+    - [ ] Print macros
+  - [ ] Panic handling
+  - [ ] Interrupt handling
+  - [ ] Kernel Paging Setup
+  - [ ] Kernel Frame Allocation
+  - [ ] Kernel Page Table Allocation
   - [ ] Disk drivers
-  - [ ] FAT12 read only drivers
+  - [ ] FAT32 read-only drivers
       - [ ] Root directory lookup
       - [ ] FAT lookup
       - [ ] Subdirectory lookup
-  - [ ] FAT16 read/write drivers
+  - [ ] FAT32 read/write drivers
+  - [ ] EXT4 read-only drivers
+      - [ ] Read superblock
+      - [ ] Root directory reading
+      - [ ] Directory reading
+      - [ ] Inode reading
+      - [ ] File reading
+  - [ ] EXT4 read/write drivers
   - [ ] Virtual file system
   - [ ] ELF executable loading
-  - [ ] Print routines
+  - [ ] PCI
+    - [ ] PCI device enumeration
+    - [ ] PCI host bridge enumeration
+  - [ ] Graphics
+    - [ ] VMWARE SVGA card driver
     - [ ] Bitmap font rendering
