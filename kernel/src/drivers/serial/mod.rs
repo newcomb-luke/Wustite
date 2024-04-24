@@ -129,7 +129,7 @@ impl Write for SerialPort {
 
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         for c in s.chars() {
-            self.write_char(c);
+            self.write_char(c)?;
         }
         Ok(())
     }

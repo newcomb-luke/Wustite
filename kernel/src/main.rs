@@ -19,7 +19,6 @@ use drivers::{keyboard::KEYBOARD_BUFFER, serial::SERIAL0};
 use x86_64::VirtAddr;
 
 use crate::drivers::{
-    ata::available_drives,
     pci::{PCIDevice, PCI_SUBSYSTEM},
     video::svga::vmware_svga_2::VMWareSVGADriver
 };

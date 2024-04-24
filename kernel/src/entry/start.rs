@@ -1,6 +1,6 @@
 use crate::{logln, hlt_loop};
 use common::BootInfo;
-use core::{fmt::Write, panic::PanicInfo};
+use core::panic::PanicInfo;
 
 #[no_mangle]
 pub unsafe extern "C" fn _start(boot_info: *const BootInfo) -> ! {
