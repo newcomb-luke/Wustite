@@ -75,13 +75,6 @@ pub fn construct_memory_map(
 #[derive(Debug, Clone)]
 pub enum GetMemoryMapError {
     TooManyMemoryRegionsErrror,
-    UEFIError(uefi::Error),
-}
-
-impl From<uefi::Error> for GetMemoryMapError {
-    fn from(value: uefi::Error) -> Self {
-        Self::UEFIError(value)
-    }
 }
 
 struct StackMemoryRegions {

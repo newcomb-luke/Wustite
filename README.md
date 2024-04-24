@@ -28,10 +28,10 @@ A custom toy operating system written mostly in the Rust programming language. T
 	- [x] Set kernel stack as active stack
 	- [x] Jump to kernel
 - [ ] Kernel
-  - [ ] Bare bones printing
+  - [x] Bare bones printing
     - [x] Serial port 0 driver
-    - [ ] Print macros
-  - [ ] Panic handling
+    - [x] Print macros
+  - [x] Panic handling
   - [ ] Interrupt handling
   - [ ] Kernel Paging Setup
   - [ ] Kernel Frame Allocation

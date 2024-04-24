@@ -2,12 +2,10 @@
 #![no_main]
 #![feature(int_roundings)]
 
-use core::{arch::{asm, x86_64}, panic};
+use core::{arch::asm, panic};
 
 use common::{
     BootInfo,
-    KernelEntry,
-    memory::MemoryRegion,
     elf::{ElfFile, FileType}
 };
 use uefi::{
@@ -49,7 +47,7 @@ const KERNEL_MAX_SIZE: usize = 1024 * 1024 * 2; // 2 MiB
 const PHYS_MAP_VIRTUAL_OFFSET: u64 = 0x18000000000;
 const PHYS_MAP_PML4T_INDEX: usize = 3;
 
-const MAXIMUM_SUPPORTED_MEMORY: u64 = 0x200000000; // 8 GiB
+// const MAXIMUM_SUPPORTED_MEMORY: u64 = 0x200000000; // 8 GiB
 
 // We have to make this static so that we can still know how to load it after we switch
 // to the kernel's stack
@@ -126,12 +124,10 @@ pub fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Statu
     switch_paging(pml4t_address);
 
     // Finally switch to the kernel!
-    unsafe { jump_to_kernel() };
+    jump_to_kernel();
 }
 
-#[no_mangle]
-#[inline(never)]
-pub extern "C" fn jump_to_kernel() -> ! {
+fn jump_to_kernel() -> ! {
     // Also sets up the new kernel stack
     
     unsafe {
