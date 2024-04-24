@@ -118,13 +118,18 @@ impl SerialPort {
 
 impl Write for SerialPort {
     fn write_char(&mut self, c: char) -> core::fmt::Result {
-        self.send_byte(c as u8);
+        if c == '\n' {
+            self.send_byte(b'\r');
+            self.send_byte(b'\n');
+        } else {
+            self.send_byte(c as u8);
+        }
         Ok(())
     }
 
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         for c in s.chars() {
-            self.send_byte(c as u8);
+            self.write_char(c);
         }
         Ok(())
     }
@@ -137,8 +142,8 @@ macro_rules! log {
 
 #[macro_export]
 macro_rules! logln {
-    () => ($crate::log!("\r\n"));
-    ($($arg:tt)*) => ($crate::log!("{}\r\n", format_args!($($arg)*)));
+    () => ($crate::log!("\n"));
+    ($($arg:tt)*) => ($crate::log!("{}\n", format_args!($($arg)*)));
 }
 
 #[doc(hidden)]
