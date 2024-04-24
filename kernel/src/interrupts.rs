@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::eprintln;
+use crate::logln;
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -48,7 +48,7 @@ pub fn init_idt() {
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    eprintln!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+    logln!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
 extern "x86-interrupt" fn double_fault_handler(
@@ -73,10 +73,10 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     use x86_64::registers::control::Cr2;
 
-    eprintln!("EXCEPTION: PAGE FAULT");
-    eprintln!("Accessed Address: {:?}", Cr2::read());
-    eprintln!("Error Code: {:?}", error_code);
-    eprintln!("{:#?}", stack_frame);
+    logln!("EXCEPTION: PAGE FAULT");
+    logln!("Accessed Address: {:?}", Cr2::read());
+    logln!("Error Code: {:?}", error_code);
+    logln!("{:#?}", stack_frame);
     crate::hlt_loop();
 }
 

@@ -21,14 +21,13 @@ use x86_64::VirtAddr;
 use crate::drivers::{
     ata::available_drives,
     pci::{PCIDevice, PCI_SUBSYSTEM},
-    video::{
-        svga::vmware_svga_2::VMWareSVGADriver,
-        vga::text::{eprintln, println},
-    },
+    video::svga::vmware_svga_2::VMWareSVGADriver
 };
 
 fn start_kernel() {
-    println!("Wustite version {}", env!("CARGO_PKG_VERSION"));
+    logln!("------------------------- Kernel loaded -------------------------");
+
+    logln!("Wustite version {}", env!("CARGO_PKG_VERSION"));
 
     // let acpi_reader = ACPIReader::read(phys_mem_offset).expect("ACPI not found, cannot continue");
 
@@ -51,7 +50,7 @@ fn start_kernel() {
                         vga_driver = Some(driver);
                     }
                     Err(e) => {
-                        eprintln!("Failed to initialize SVGA driver: {e:?}");
+                        logln!("Failed to initialize SVGA driver: {e:?}");
                     }
                 }
             }
@@ -59,8 +58,8 @@ fn start_kernel() {
     }
 
     if vga_driver.is_none() {
-        eprintln!("No SVGA-compatible graphics device found");
-        eprintln!("Failed to initialize graphics");
+        logln!("No SVGA-compatible graphics device found");
+        logln!("Failed to initialize graphics");
     }
 }
 
@@ -69,10 +68,6 @@ fn initialize_kernel(boot_info: &BootInfo) {
         let mut serial = SERIAL0.lock();
         serial.initialize();
     }
-
-    println!("Hello from kernel land!");
-
-    loop {}
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };

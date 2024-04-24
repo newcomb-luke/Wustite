@@ -1,21 +1,14 @@
-use crate::{eprintln, hlt_loop};
+use crate::{logln, hlt_loop};
 use common::BootInfo;
 use core::{fmt::Write, panic::PanicInfo};
-use crate::SERIAL0;
 
 #[no_mangle]
-pub unsafe extern "C" fn _start(boot_info: BootInfo) -> ! {
-    {
-        let mut serial = SERIAL0.lock();
-        serial.initialize();
-        serial.write_str("Hello from kernel land!");
-    }
-
-    loop {}
-
+pub unsafe extern "C" fn _start(boot_info: *const BootInfo) -> ! {
     crate::initialize_platform();
 
-    crate::initialize_kernel(&boot_info);
+    let boot_info = boot_info.as_ref().unwrap();
+
+    crate::initialize_kernel(boot_info);
 
     crate::start_kernel();
 
@@ -25,6 +18,6 @@ pub unsafe extern "C" fn _start(boot_info: BootInfo) -> ! {
 /// This function is called on panic.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    eprintln!("{}", info);
+    logln!("ERROR: {}", info);
     hlt_loop();
 }
