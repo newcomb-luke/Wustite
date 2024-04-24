@@ -7,8 +7,7 @@ use modules_common::_log_str;
 
 #[no_mangle]
 pub fn _start() {
-    let funcs: &[*const extern "C" fn()] = &[module_init as _];
-    core::mem::forget(core::hint::black_box(funcs));
+    let _funcs: &[*const extern "C" fn()] = &[module_init as _];
 }
 
 #[no_mangle]
@@ -17,6 +16,6 @@ pub unsafe fn module_init() {
 }
 
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
+fn panic(_info: &PanicInfo) -> ! {
     loop {}
 }
