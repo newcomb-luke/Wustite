@@ -64,18 +64,18 @@ pub fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Statu
 
     let boot_services = system_table.boot_services();
 
-    println!("Bootloader started!");
+    println!("----------------------- Bootloader started ----------------------");
 
     let initramfs_file = find_file(INITRAMFS_PATH, boot_services).unwrap();
 
-    println!("Found {}", INITRAMFS_PATH);
+    // println!("Found {}", INITRAMFS_PATH);
 
     let initramfs_read_location = read_file(initramfs_file, boot_services).unwrap();
 
-    println!(
-        "Initramfs loaded at: {:?}",
-        initramfs_read_location.as_ptr()
-    );
+    // println!(
+    //     "Initramfs loaded at: {:?}",
+    //     initramfs_read_location.as_ptr()
+    // );
 
     let (kernel_read_location, kernel_load_location) = read_and_allocate_kernel(boot_services);
 
@@ -86,22 +86,16 @@ pub fn main(_image_handle: Handle, mut system_table: SystemTable<Boot>) -> Statu
         .map(|e| e.address as *const u8)
         .expect("Could not find ACPI table, cannot continue.");
 
-    println!("Address of ACPI RSDP table: {:?}", acpi_rsdp);
-
     let boot_info_location = boot_services
         .allocate_pool(MemoryType::LOADER_DATA, ::core::mem::size_of::<BootInfo>()).unwrap() as *mut BootInfo;
-
-    println!("Address of Boot Info: {:?}", boot_info_location);
 
     let kernel_stack_location = allocate_kernel_stack(boot_services);
 
     let pml4t_address = init_paging(boot_services, kernel_stack_location, kernel_load_location.as_ptr() as u64).unwrap();
 
-    println!("Paging initalized, PML4T address: {:08x}", pml4t_address);
-
     let memory_regions = allocate_memory_map_storage(boot_services).unwrap();
 
-    println!("Hopefully this works!");
+    println!("Loading kernel...");
 
     // EXITING BOOT SERVICES -- CAN NO LONGER CALL ANY UEFI ROUTINES
     let (_, uefi_memory_map) = system_table.exit_boot_services();
@@ -342,11 +336,11 @@ fn init_paging(boot_services: &BootServices, kernel_stack_location: u64, kernel_
 fn read_and_allocate_kernel(boot_services: &BootServices) -> (&'static mut [u8], &'static mut [u8]) {
     let kernel_file = find_file(KERNEL_PATH, boot_services).unwrap();
 
-    println!("Found {}", KERNEL_PATH);
+    // println!("Found {}", KERNEL_PATH);
 
     let kernel_read_location = read_file(kernel_file, boot_services).unwrap();
 
-    println!("Read kernel at: {:?}", kernel_read_location.as_ptr());
+    // println!("Read kernel at: {:?}", kernel_read_location.as_ptr());
 
     if kernel_read_location.len() > KERNEL_MAX_SIZE {
         panic!("Kernel is larger than 2 MiB. Unsupported");
@@ -363,7 +357,7 @@ fn read_and_allocate_kernel(boot_services: &BootServices) -> (&'static mut [u8],
         panic!("Only DYN ELF kernel images are supported");
     }
 
-    println!("Kernel was valid. Entry point {:08x}", kernel_elf.entry_point() + KERNEL_VIRTUAL_OFFSET);
+    // println!("Kernel was valid. Entry point {:08x}", kernel_elf.entry_point() + KERNEL_VIRTUAL_OFFSET);
 
     let kernel_required_bytes = kernel_elf.get_maximum_process_image_size() as usize;
     let kernel_required_pages = kernel_required_bytes.div_ceil(4096);
@@ -382,7 +376,7 @@ fn read_and_allocate_kernel(boot_services: &BootServices) -> (&'static mut [u8],
         core::slice::from_raw_parts_mut(kernel_load_location as *mut u8, kernel_required_bytes)
     };
 
-    println!("Kernel load location: {kernel_load_location:08x}");
+    // println!("Kernel load location: {kernel_load_location:08x}");
 
     (kernel_read_location, kernel_load_location_slice)
 }
@@ -411,7 +405,7 @@ fn allocate_kernel_stack(boot_services: &BootServices) -> u64 {
         num_pages)
         .unwrap() as u64;
 
-    println!("Allocated {} pages of kernel stack starting at {:08x}", num_pages, stack_address);
+    // println!("Allocated {} pages of kernel stack starting at {:08x}", num_pages, stack_address);
 
     stack_address
 }
