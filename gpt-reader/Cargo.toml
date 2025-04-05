@@ -1,5 +1,5 @@
 [package]
-name = "ext4-core"
+name = "gpt-reader"
 version.workspace = true
 edition.workspace = true
 

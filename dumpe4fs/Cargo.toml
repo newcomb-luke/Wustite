@@ -1,0 +1,8 @@
+[package]
+name = "dumpe4fs"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+clap = { version = "4.5.4", features = ["derive"] }
+ext4-core = { path = "../ext4-core" }

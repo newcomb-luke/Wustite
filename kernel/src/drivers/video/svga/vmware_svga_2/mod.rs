@@ -34,6 +34,24 @@ const SVGA_REG_BUSY: u32 = 22;
 
 const DRIVER_SPEC_ID: u32 = 0x90000002;
 
+const SVGA_CAP_NONE: u32 = 0x00000000;
+const SVGA_CAP_RECT_COPY: u32 = 0x00000002;
+const SVGA_CAP_CURSOR: u32 = 0x00000020;
+const SVGA_CAP_CUSOR_BYPASS: u32 = 0x00000040;
+const SVGA_CAP_CUSOR_BYPASS_2: u32 = 0x00000080;
+const SVGA_CAP_8BIT_EMULATION: u32 = 0x00000100;
+const SVGA_CAP_ALPHA_CURSOR: u32 = 0x00000200;
+const SVGA_CAP_3D: u32 = 0x00004000;
+const SVGA_CAP_EXTENDED_FIFO: u32 = 0x00008000;
+const SVGA_CAP_MULTIMON: u32 = 0x00010000;
+const SVGA_CAP_PITCHLOCK: u32 = 0x00020000;
+const SVGA_CAP_IRQMASK: u32 = 0x00040000;
+const SVGA_CAP_DISPLAY_TOPOLOGY: u32 = 0x00080000;
+const SVGA_CAP_GMR: u32 = 0x00100000;
+const SVGA_CAP_TRACES: u32 = 0x00200000;
+const SVGA_CAP_GMR2: u32 = 0x00400000;
+const SVGA_CAP_SCREEN_OBJECT_2: u32 = 0x00800000;
+
 #[derive(Debug, Clone, Copy)]
 pub enum DriverInitError {
     SpecUnsupportedError,
@@ -61,15 +79,15 @@ impl VMWareSVGADriver {
             return Err(DriverInitError::SpecUnsupportedError);
         }
 
-        logln!("SVGA base port: {:04x}", base_port);
-        logln!("Framebuffer start: {:04x}", driver.read_framebuffer_start());
+        logln!("SVGA base port: 0x{:04x}", base_port);
+        logln!("Framebuffer start: 0x{:04x}", driver.read_framebuffer_start());
         logln!(
-            "Framebuffer offset: {:04x}",
+            "Framebuffer offset: 0x{:04x}",
             driver.read_framebuffer_offset()
         );
-        logln!("Framebuffer size: {:04x}", driver.read_framebuffer_size());
-        logln!("FIFO start: {:04x}", driver.read_fifo_start());
-        logln!("FIFO size: {:04x}", driver.read_fifo_size());
+        logln!("Framebuffer size: 0x{:04x}", driver.read_framebuffer_size());
+        logln!("FIFO start: 0x{:04x}", driver.read_fifo_start());
+        logln!("FIFO size: 0x{:04x}", driver.read_fifo_size());
 
         logln!(
             "Max dimensions: {}x{}",
@@ -82,6 +100,30 @@ impl VMWareSVGADriver {
             driver.read_width(),
             driver.read_height()
         );
+
+        let fb_start = driver.read_framebuffer_start();
+        let fb_width = driver.read_width() as usize;
+        let fb_height = driver.read_height() as usize;
+        let fb = (fb_start as usize) as *mut u64;
+
+        let color: u64 = 0xff0000ffff0000ff;
+
+        unsafe {
+            for r in 0..fb_height {
+                for c in 0..(fb_width / 2) {
+                    fb.add((r * (fb_width / 2)) + c).write_volatile(color);
+                }
+            }
+        }
+
+        driver.write_width(1920);
+        driver.write_height(1080);
+
+        let fb_offset = driver.read_framebuffer_offset();
+
+        logln!("fb_offset: {fb_offset:08x}");
+
+        driver.write_enable(true);
 
         Ok(driver)
     }
@@ -104,6 +146,10 @@ impl VMWareSVGADriver {
 
     fn read_spec_id_register(&mut self) -> u32 {
         unsafe { self.read_register(SVGA_REG_ID) }
+    }
+
+    fn write_enable(&mut self, enable: bool) {
+        unsafe { self.write_register(SVGA_REG_ENABLE, if enable { 1 } else { 0 }) }
     }
 
     fn read_framebuffer_start(&mut self) -> u32 {
@@ -134,11 +180,23 @@ impl VMWareSVGADriver {
         unsafe { self.read_register(SVGA_REG_HEIGHT) }
     }
 
+    fn write_width(&mut self, value: u32) {
+        unsafe { self.write_register(SVGA_REG_WIDTH, value) }
+    }
+
+    fn write_height(&mut self, value: u32) {
+        unsafe { self.write_register(SVGA_REG_HEIGHT, value) }
+    }
+
     fn read_max_width(&mut self) -> u32 {
         unsafe { self.read_register(SVGA_REG_MAX_WIDTH) }
     }
 
     fn read_max_height(&mut self) -> u32 {
         unsafe { self.read_register(SVGA_REG_MAX_HEIGHT) }
+    }
+
+    fn read_bits_per_pixel(&mut self) -> u32 {
+        unsafe { self.read_register(SVGA_REG_BPP) }
     }
 }

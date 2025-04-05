@@ -1,62 +1,45 @@
-use std::fs::File;
-use std::io::prelude::*;
-use std::path::Path;
-use std::io::SeekFrom;
-use std::io;
-use core::fmt::Debug;
+use core::fmt::{Debug, Display};
 
-type LBA = u64;
+use crate::Error;
 
-const BLOCK_SIZE: u64 = 1024;
-
-struct BlockDevice {
-    inner: File
-}
-
-impl BlockDevice {
-    pub fn new(path: &Path) -> Self {
-        Self {
-            inner: File::open(path).unwrap()
-        }
-    }
-
-    pub fn read_block(&mut self, lba: LBA, buffer: &mut [u8]) -> io::Result<()> {
-        self.inner.seek(SeekFrom::Start(lba * BLOCK_SIZE))?;
-
-        self.inner.read(buffer)?;
-
-        Ok(())
-    }
-
-}
+use bin_tools::{
+    read_i16_le,
+    read_u16_le,
+    read_u16_be,
+    read_u32_le,
+    read_u32_be,
+    read_u64_le
+};
 
 #[derive(Debug, Copy, Clone)]
-struct SuperBlockState {
-    inner: u16
-}
+pub struct FileSystemState(u16);
 
-impl SuperBlockState {
-    fn new(raw_value: u16) -> Self {
-        Self {
-            inner: raw_value
-        }
-    }
-
+impl FileSystemState {
     pub fn cleanly_unmounted(&self) -> bool {
-        (self.inner & 0x0001) != 0
+        (self.0 & 0x0001) != 0
     }
 
     pub fn errors_detected(&self) -> bool {
-        (self.inner & 0x0002) != 0
+        (self.0 & 0x0002) != 0
     }
 
     pub fn orphans_being_recovered(&self) -> bool {
-        (self.inner & 0x0004) != 0
+        (self.0 & 0x0004) != 0
+    }
+
+    pub fn raw_value(&self) -> u16 {
+        self.0
+    }
+}
+
+impl From<u16> for FileSystemState {
+    fn from(value: u16) -> Self {
+        Self(value)
     }
 }
 
 #[derive(Debug, Copy, Clone)]
-enum SuperBlockErrorPolicy {
+pub enum SuperBlockErrorPolicy {
     Continue,
     RemountAsReadOnly,
     Panic,
@@ -75,7 +58,7 @@ impl From<u16> for SuperBlockErrorPolicy {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum FileSystemCreatorOS {
+pub enum FileSystemCreatorOS {
     Linux,
     Hurd,
     Masix,
@@ -99,14 +82,28 @@ impl From<u32> for FileSystemCreatorOS {
     }
 }
 
+impl Display for FileSystemCreatorOS {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", match self {
+            Self::Linux => "Linux",
+            Self::Hurd => "Hurd",
+            Self::Masix => "Masix",
+            Self::FreeBSD => "FreeBSD",
+            Self::Lites => "Lites",
+            Self::Wustite => "Wustite",
+            Self::Unknown => "<unknown>"
+        })
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
-enum SuperBlockRevision {
+pub enum Revision {
     Original,
     V2,
     Unknown
 }
 
-impl From<u32> for SuperBlockRevision {
+impl From<u32> for Revision {
     fn from(value: u32) -> Self {
         match value {
             0 => Self::Original,
@@ -116,8 +113,18 @@ impl From<u32> for SuperBlockRevision {
     }
 }
 
+impl Display for Revision {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", match self {
+            Self::Original => "0 (original)",
+            Self::V2 => "1 (dynamic)",
+            Self::Unknown => "<unknown>"
+        })
+    }
+}
+
 #[derive(Copy, Clone)]
-struct UUID([u8; 16]);
+pub struct UUID([u8; 16]);
 
 impl PartialEq for UUID {
     fn eq(&self, other: &Self) -> bool {
@@ -134,6 +141,12 @@ impl PartialEq for UUID {
 impl Eq for UUID {}
 
 impl Debug for UUID {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl Display for UUID {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
         write!(f, "{:08x}-{:04x}-{:04x}-{:04x}-{:08x}{:04x}",
                         read_u32_be(&self.0, 0),
@@ -146,10 +159,10 @@ impl Debug for UUID {
 }
 
 #[derive(Copy, Clone)]
-struct VolumeLabel([u8; 16]);
+pub struct VolumeLabel([u8; 16]);
 
 impl VolumeLabel {
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         let mut end_pos = 0;
 
         for i in 0..self.0.len() {
@@ -170,10 +183,10 @@ impl Debug for VolumeLabel {
 }
 
 #[derive(Copy, Clone)]
-struct MountDirectory([u8; 64]);
+pub struct MountDirectory([u8; 64]);
 
 impl MountDirectory {
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         let mut end_pos = 0;
 
         for i in 0..self.0.len() {
@@ -185,6 +198,10 @@ impl MountDirectory {
 
         unsafe { core::str::from_utf8_unchecked(&self.0[0..end_pos]) }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.0[0] == 0
+    }
 }
 
 impl Debug for MountDirectory {
@@ -194,16 +211,16 @@ impl Debug for MountDirectory {
 }
 
 #[derive(Debug, Copy, Clone)]
-struct HashSeed([u32; 4]);
+pub struct HashSeed([u32; 4]);
 
 #[derive(Debug, Copy, Clone)]
-struct JournalInodesBackup([u32; 17]);
+pub struct JournalInodesBackup([u32; 17]);
 
 #[derive(Copy, Clone)]
-struct FunctionName([u8; 32]);
+pub struct FunctionName([u8; 32]);
 
 impl FunctionName {
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         let mut end_pos = 0;
 
         for i in 0..self.0.len() {
@@ -224,10 +241,10 @@ impl Debug for FunctionName {
 }
 
 #[derive(Copy, Clone)]
-struct MountOptions([u8; 64]);
+pub struct MountOptions([u8; 64]);
 
 impl MountOptions {
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         let mut end_pos = 0;
 
         for i in 0..self.0.len() {
@@ -248,17 +265,17 @@ impl Debug for MountOptions {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct BackupBlockGroups([u32; 2]);
+pub struct BackupBlockGroups([u32; 2]);
 
 #[derive(Debug, Clone, Copy)]
-struct EncryptionAlgorithms([u8; 4]);
+pub struct EncryptionAlgorithms([u8; 4]);
 
 #[derive(Debug, Clone, Copy)]
-struct EncryptionSalt([u8; 16]);
+pub struct EncryptionSalt([u8; 16]);
 
 #[derive(Debug, Copy, Clone)]
-struct Ext4SuperBlock {
-    // offset 0x0
+pub struct SuperBlock {
+    /// offset 0x0
     inodes_count: u32,
     // offset 0x004 for lo bytes
     // offset 0x150 for hi bytes
@@ -297,7 +314,7 @@ struct Ext4SuperBlock {
     // needs to be 0xEF53
     magic: u16,
     // offset 0x3a
-    state: SuperBlockState,
+    state: FileSystemState,
     // offset 0x3c
     error_policy: SuperBlockErrorPolicy,
     // offset 0x3e
@@ -310,7 +327,7 @@ struct Ext4SuperBlock {
     // offset 0x48
     creator_os: FileSystemCreatorOS,
     // offset 0x4c
-    revision_level: SuperBlockRevision,
+    revision_level: Revision,
     // offset 0x50
     default_reserved_uid: u16,
     // offset 0x52
@@ -333,7 +350,7 @@ struct Ext4SuperBlock {
     // offset 0x78
     volume_label: VolumeLabel,
     // offset 0x88
-    last_mounted: MountDirectory,
+    last_mounted: Option<MountDirectory>,
     // offset 0xc8
     algorithm_usage_bitmap: u32,
     // offset 0xcc
@@ -449,9 +466,15 @@ struct Ext4SuperBlock {
     checksum: u32
 }
 
-impl Ext4SuperBlock {
-    pub fn read(buffer: &[u8]) -> Self {
-        Self {
+impl SuperBlock {
+    const SUPER_BLOCK_SIZE: usize = 1024;
+
+    pub fn read(buffer: &[u8]) -> Result<Self, Error> {
+        if buffer.len() < Self::SUPER_BLOCK_SIZE {
+            return Err(Error::BufferSizeTooSmall(buffer.len() as u32));
+        }
+
+        Ok(Self {
             inodes_count: read_u32_le(buffer, 0x00),
             blocks_count: read_u32_le(buffer, 0x004) as u64 // lo bytes
                         | ((read_u32_le(buffer, 0x150) as u64) << 32), // hi bytes
@@ -473,14 +496,14 @@ impl Ext4SuperBlock {
             mount_count: read_u16_le(buffer, 0x34),
             max_mount_count: read_i16_le(buffer, 0x36),
             magic: read_u16_le(buffer, 0x38),
-            state: SuperBlockState::new(read_u16_le(buffer, 0x38)),
+            state: FileSystemState::from(read_u16_le(buffer, 0x38)),
             error_policy: SuperBlockErrorPolicy::from(read_u16_le(buffer, 0x3c)),
             minor_revision_level: read_u16_le(buffer, 0x3e),
             last_check_time: read_u32_le(buffer, 0x40) as u64 // lo bytes
                            | ((buffer[0x277] as u64) << 32), // hi byte
             check_interval: read_u32_le(buffer, 0x44),
-            creator_os: read_u32_le(buffer, 0x48).into(),
-            revision_level: read_u32_le(buffer, 0x4c).into(),
+            creator_os: FileSystemCreatorOS::from(read_u32_le(buffer, 0x48)),
+            revision_level: Revision::from(read_u32_le(buffer, 0x4c)),
             default_reserved_uid: read_u16_le(buffer, 0x50),
             default_reserved_gid: read_u16_le(buffer, 0x52),
             first_inode: read_u32_le(buffer, 0x54),
@@ -550,81 +573,44 @@ impl Ext4SuperBlock {
             filename_encoding_flags: read_u16_le(buffer, 0x27e),
             orphan_file_inode_number: read_u32_le(buffer, 0x280),
             checksum: read_u32_le(buffer, 0x3fc)
-        }
+        })
     }
-}
 
-struct Ext4FS {
-    bd: BlockDevice
-}
-
-impl Ext4FS {
-    pub fn new(bd: BlockDevice) -> Self {
-        Self {
-            bd
-        }
+    pub fn magic(&self) -> u16 {
+        self.magic
     }
-}
 
-fn main() {
-    let path = Path::new("./test.img");
-    let mut bd = BlockDevice::new(path);
-
-    let mut buffer = [0; BLOCK_SIZE as usize];
-
-    bd.read_block(1, &mut buffer).unwrap();
-
-    let super_block = Ext4SuperBlock::read(&buffer);
-
-    println!("{:#?}", super_block);
-
-    println!("FS Magic: 0x{:04X} (0xEF53)", super_block.magic);
-}
-
-fn print_block(buffer: &[u8]) {
-    for i in 1..=buffer.len() {
-        print!("{:02x} ", buffer[i - 1]);
-        
-        if (i % 16) == 0 {
-            println!();
-        }
+    pub fn volume_label(&self) -> &str {
+        self.volume_label.as_str()
     }
-}
 
-fn read_u64_le(input: &[u8], offset: usize) -> u64 {
-    let mut buffer: [u8; 8] = [0; 8];
-    buffer.copy_from_slice(&input[offset..offset+8]);
-    u64::from_le_bytes(buffer)
-}
+    pub fn filesystem_uuid(&self) -> &UUID {
+        &self.uuid
+    }
 
-fn read_u32_le(input: &[u8], offset: usize) -> u32 {
-    let mut buffer: [u8; 4] = [0; 4];
-    buffer.copy_from_slice(&input[offset..offset+4]);
-    u32::from_le_bytes(buffer)
-}
+    pub fn last_mounted(&self) -> Option<&str> {
+        self.last_mounted.as_ref().map(|o| o.as_str())
+    }
 
-fn read_u16_le(input: &[u8], offset: usize) -> u16 {
-    let mut buffer: [u8; 2] = [0; 2];
-    buffer.copy_from_slice(&input[offset..offset+2]);
-    u16::from_le_bytes(buffer)
-}
+    pub fn filesystem_revision(&self) -> Revision {
+        self.revision_level
+    }
 
-fn read_i16_le(input: &[u8], offset: usize) -> i16 {
-    let mut buffer: [u8; 2] = [0; 2];
-    buffer.copy_from_slice(&input[offset..offset+2]);
-    i16::from_le_bytes(buffer)
-}
+    pub fn creator_os(&self) -> FileSystemCreatorOS {
+        self.creator_os
+    }
 
-fn read_u32_be(input: &[u8], offset: usize) -> u32 {
-    let mut buffer: [u8; 4] = [0; 4];
-    buffer.copy_from_slice(&input[offset..offset+4]);
-    u32::from_be_bytes(buffer)
-}
+    pub fn filesystem_state(&self) -> FileSystemState {
+        self.state
+    }
 
-fn read_u16_be(input: &[u8], offset: usize) -> u16 {
-    let mut buffer: [u8; 2] = [0; 2];
-    buffer.copy_from_slice(&input[offset..offset+2]);
-    u16::from_be_bytes(buffer)
+    pub fn group_descriptor_size(&self) -> u16 {
+        self.group_descriptor_size
+    }
+
+    pub fn inode_size(&self) -> u16 {
+        self.inode_size
+    }
 }
 
 fn read_uuid(input: &[u8], offset: usize) -> UUID {
@@ -639,10 +625,15 @@ fn read_label(input: &[u8], offset: usize) -> VolumeLabel {
     VolumeLabel(buffer)
 }
 
-fn read_mount_directory(input: &[u8], offset: usize) -> MountDirectory {
+fn read_mount_directory(input: &[u8], offset: usize) -> Option<MountDirectory> {
+    if input[offset] == 0 {
+        return None;
+    }
+
     let mut buffer: [u8; 64] = [0; 64];
     buffer.copy_from_slice(&input[offset..offset+64]);
-    MountDirectory(buffer)
+
+    Some(MountDirectory(buffer))
 }
 
 fn read_function_name(input: &[u8], offset: usize) -> FunctionName {

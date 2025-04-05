@@ -1,7 +1,6 @@
 [package]
-name = "ext4-core"
+name = "bin-tools"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-bin-tools = { path = "../bin-tools" }
