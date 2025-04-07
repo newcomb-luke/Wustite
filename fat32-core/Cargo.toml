@@ -1,0 +1,7 @@
+[package]
+name = "fat32-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bin-tools = { path = "../bin-tools" }

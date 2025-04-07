@@ -1,5 +1,9 @@
-use std::{fs::File, io::{self, Seek, SeekFrom, Read}, path::PathBuf};
 use clap::Parser;
+use std::{
+    fs::File,
+    io::{self, Read, Seek, SeekFrom},
+    path::PathBuf,
+};
 
 use ext4_core::{groups::GroupDescriptor, inode::Inode, superblock::SuperBlock};
 
@@ -26,32 +30,53 @@ fn main() {
                 return;
             }
 
-            println!("sizeof: {}", core::mem::size_of::<SuperBlock>());
-
             match SuperBlock::read(&block) {
                 Ok(superblock) => {
-
                     if superblock.magic() != ext4_core::EXT4_MAGIC {
-                        eprintln!("Bad magic number in superblock while trying to open {}", &args.file.display());
+                        eprintln!(
+                            "Bad magic number in superblock while trying to open {}",
+                            &args.file.display()
+                        );
                         eprintln!("Couldn't find valid filesystem superblock.");
                         return;
                     }
 
                     println!("Filesystem volume name:   {}", superblock.volume_label());
-                    println!("Last mounted on:          {}", superblock.last_mounted().unwrap_or("<not available>"));
+                    println!(
+                        "Last mounted on:          {}",
+                        superblock.last_mounted().unwrap_or("<not available>")
+                    );
                     println!("Filesystem UUID:          {}", superblock.filesystem_uuid());
                     println!("Filesystem magic number:  0x{:04X}", superblock.magic());
-                    println!("Filesystem revision #:    {}", superblock.filesystem_revision());
+                    println!(
+                        "Filesystem revision #:    {}",
+                        superblock.filesystem_revision()
+                    );
                     println!("Filesystem features:      {}", "");
                     println!("Filesystem flags:         {}", "");
                     println!("Default mount options:    {}", "");
-                    println!("Filesystem state:         {:016b}", superblock.filesystem_state().raw_value());
-                    println!("Filesystem clean:         {}", superblock.filesystem_state().cleanly_unmounted());
-                    println!("Filesystem errors:        {}", superblock.filesystem_state().errors_detected());
-                    println!("Filesystem orphans:       {}", superblock.filesystem_state().orphans_being_recovered());
+                    println!(
+                        "Filesystem state:         {:016b}",
+                        superblock.filesystem_state().raw_value()
+                    );
+                    println!(
+                        "Filesystem clean:         {}",
+                        superblock.filesystem_state().cleanly_unmounted()
+                    );
+                    println!(
+                        "Filesystem errors:        {}",
+                        superblock.filesystem_state().errors_detected()
+                    );
+                    println!(
+                        "Filesystem orphans:       {}",
+                        superblock.filesystem_state().orphans_being_recovered()
+                    );
                     println!("Errors behavior:          {}", "");
                     println!("Filesystem OS type:       {}", superblock.creator_os());
-                    println!("Group descriptor size:    {}", superblock.group_descriptor_size());
+                    println!(
+                        "Group descriptor size:    {}",
+                        superblock.group_descriptor_size()
+                    );
 
                     let mut gdt_block = [0u8; 1024];
 
@@ -66,7 +91,12 @@ fn main() {
 
                     let mut inode_table_block = [0u8; 1024];
 
-                    if let Err(e) = read_block(&mut opened, u32::from(first_gd.inode_table_block()) as u64, 4096, &mut inode_table_block) {
+                    if let Err(e) = read_block(
+                        &mut opened,
+                        u32::from(first_gd.inode_table_block()) as u64,
+                        4096,
+                        &mut inode_table_block,
+                    ) {
                         eprintln!("Error reading file: {e}");
                         return;
                     }
