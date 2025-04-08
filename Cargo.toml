@@ -7,7 +7,7 @@ members = [
     "bin-tools",
     "dumpe4fs",
     "gpt-reader",
-    "vfat32-core",
+    "vfat32-core", "mock-vfat32-driver", "block-device",
 ]
 exclude = ["modules/"]
 resolver = "2"

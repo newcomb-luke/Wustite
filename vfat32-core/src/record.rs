@@ -75,6 +75,10 @@ impl BootRecord {
         }
     }
 
+    pub fn bytes_per_sector(&self) -> u16 {
+        self.bytes_per_sector
+    }
+
     pub fn first_fat_sector(&self) -> u32 {
         self.num_reserved_sectors as u32
     }
@@ -85,6 +89,14 @@ impl BootRecord {
         } else {
             self.total_sectors as u32
         }
+    }
+
+    pub fn root_directory_cluster(&self) -> u32 {
+        self.root_directory_cluster
+    }
+
+    pub fn fs_info_sector(&self) -> u32 {
+        self.fs_info_sector as u32
     }
 }
 

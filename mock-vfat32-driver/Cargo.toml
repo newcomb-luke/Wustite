@@ -1,8 +1,9 @@
 [package]
-name = "vfat32-core"
+name = "mock-vfat32-driver"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 bin-tools = { path = "../bin-tools" }
+vfat32-core = { path = "../vfat32-core" }
 block-device = { path = "../block-device" }
