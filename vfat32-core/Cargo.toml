@@ -1,5 +1,5 @@
 [package]
-name = "fat32-core"
+name = "vfat32-core"
 version.workspace = true
 edition.workspace = true
 

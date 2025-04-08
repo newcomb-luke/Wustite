@@ -1,5 +1,14 @@
 [workspace]
-members = ["bootloader-uefi", "kernel", "common", "ext4-core", "bin-tools", "dumpe4fs", "gpt-reader", "fat32-core"]
+members = [
+    "bootloader-uefi",
+    "kernel",
+    "common",
+    "ext4-core",
+    "bin-tools",
+    "dumpe4fs",
+    "gpt-reader",
+    "vfat32-core",
+]
 exclude = ["modules/"]
 resolver = "2"
 
