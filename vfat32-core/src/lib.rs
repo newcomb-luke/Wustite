@@ -1,5 +1,6 @@
 #![no_std]
 
+pub mod entry;
 pub mod fs_info;
 pub mod record;
 
@@ -19,4 +20,14 @@ impl Display for Error {
             }
         }
     }
+}
+
+fn read_padded_str<const N: usize>(buffer: &[u8], offset: usize) -> [u8; N] {
+    let mut label = [0; N];
+
+    for i in 0..N {
+        label[i] = buffer[offset + i];
+    }
+
+    label
 }

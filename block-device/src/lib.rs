@@ -1,12 +1,14 @@
 #![no_std]
 
+use core::fmt::Debug;
+
 #[cfg(feature = "std")]
 extern crate std;
 
 pub mod impls;
 
 pub trait BlockDevice {
-    type Error;
+    type Error: Debug;
 
     fn block_size(&self) -> u64;
 
@@ -25,11 +27,11 @@ pub trait OffsetRead {
 
 // impl<T: BlockDevice> OffsetRead for T {
 //     type Error = T::Error;
-// 
+//
 //     fn read(&mut self, offset: u64, buffer: &mut [u8]) -> Result<(), Self::Error> {
 //         todo!()
 //     }
-// 
+//
 //     fn write(&mut self, offset: u64, buffer: &[u8]) -> Result<(), Self::Error> {
 //         todo!()
 //     }

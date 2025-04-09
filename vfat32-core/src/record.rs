@@ -1,5 +1,7 @@
 use bin_tools::{read_u16_le, read_u32_le};
 
+use crate::read_padded_str;
+
 #[derive(Debug, Clone, Copy)]
 pub struct BootRecord {
     // ----- BIOS Parameter Block -----
@@ -45,7 +47,7 @@ pub struct BootRecord {
     /// offset 0x43
     volume_serial_number: u32,
     /// offset 0x47
-    volume_label: [char; 11],
+    volume_label: [u8; 11],
 }
 
 impl BootRecord {
@@ -71,7 +73,7 @@ impl BootRecord {
             // drive_number: buffer[0x40],
             signature: buffer[0x42], // Must be 0x28 or 0x29
             volume_serial_number: read_u32_le(buffer, 0x43),
-            volume_label: read_volume_label(buffer, 0x47),
+            volume_label: read_padded_str(buffer, 0x47),
         }
     }
 
@@ -79,15 +81,24 @@ impl BootRecord {
         self.bytes_per_sector
     }
 
-    pub fn first_fat_sector(&self) -> u32 {
-        self.num_reserved_sectors as u32
+    pub fn sectors_per_cluster(&self) -> u64 {
+        self.sectors_per_cluster as u64
     }
 
-    pub fn num_sectors(&self) -> u32 {
+    pub fn first_data_sector(&self) -> u64 {
+        self.num_reserved_sectors as u64
+            + (self.num_file_allocation_tables as u64 * self.sectors_per_fat as u64)
+    }
+
+    pub fn first_fat_sector(&self) -> u64 {
+        self.num_reserved_sectors as u64
+    }
+
+    pub fn num_sectors(&self) -> u64 {
         if self.total_sectors == 0 {
-            self.large_total_sectors
+            self.large_total_sectors as u64
         } else {
-            self.total_sectors as u32
+            self.total_sectors as u64
         }
     }
 
@@ -95,17 +106,7 @@ impl BootRecord {
         self.root_directory_cluster
     }
 
-    pub fn fs_info_sector(&self) -> u32 {
-        self.fs_info_sector as u32
+    pub fn fs_info_sector(&self) -> u64 {
+        self.fs_info_sector as u64
     }
-}
-
-fn read_volume_label(buffer: &[u8], offset: usize) -> [char; 11] {
-    let mut label = ['\0'; 11];
-
-    for i in 0..11 {
-        label[i] = buffer[offset + i] as char;
-    }
-
-    label
 }
