@@ -7,7 +7,9 @@ members = [
     "bin-tools",
     "dumpe4fs",
     "gpt-reader",
-    "vfat32-core", "mock-vfat32-driver", "block-device",
+    "vfat32-core",
+    "mock-vfat32-driver",
+    "block-device",
 ]
 exclude = ["modules/"]
 resolver = "2"
@@ -15,6 +17,12 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
 
 # https://github.com/rust-lang/rust/issues/112245#issuecomment-1575052849
 # https://doc.rust-lang.org/cargo/reference/profiles.html#overrides

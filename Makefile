@@ -60,7 +60,7 @@ $(UEFI_PARTITION):
 	mmd -i $(UEFI_PARTITION) "::EFI"
 	mmd -i $(UEFI_PARTITION) "::EFI/BOOT"
 
-# 
+#
 # Hard disk image
 #
 
@@ -76,7 +76,7 @@ $(HARD_DISK_IMG):
 	parted $(HARD_DISK_IMG) -s -a minimal mkpart EFI FAT32 $(GPT_OFFSET)s $$(( $(GPT_OFFSET) + $(UEFI_PARTITION_SIZE) ))s
 	parted $(HARD_DISK_IMG) -s -a minimal toggle 1 boot
 
-# 
+#
 # Kernel
 #
 
@@ -88,7 +88,7 @@ $(BUILD_DIR)/kernel.o: bootloader FORCE
 	cp $(KERNEL_OUTPUT) $(BUILD_DIR)/kernel.o
 	mcopy -i $(UEFI_PARTITION) $(BUILD_DIR)/kernel.o "::kernel.o" -o
 
-# 
+#
 # Initramfs
 #
 
@@ -120,13 +120,13 @@ $(BUILD_DIR)/libide_driver.so: initramfs
 firmware: $(BUILD_DIR)/OVMF_VARS.fd
 
 $(BUILD_DIR)/OVMF_VARS.fd:
-	cp /usr/share/edk2-ovmf/x64/OVMF_VARS.fd $(BUILD_DIR)
+	cp /usr/share/edk2/x64/OVMF_VARS.4m.fd $(BUILD_DIR)
 
 run: hard_disk firmware
 	qemu-system-x86_64 --enable-kvm -cpu host -m 2G -s -d int -d mmu -d cpu_reset -d quest_errors -d page \
 		-device vmware-svga \
-		-drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
-		-drive if=pflash,format=raw,file=$(BUILD_DIR)/OVMF_VARS.fd \
+		-drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
+		-drive if=pflash,format=raw,file=$(BUILD_DIR)/OVMF_VARS.4m.fd \
 		-drive if=ide,format=raw,file=$(HARD_DISK_IMG)
 
 FORCE: ;

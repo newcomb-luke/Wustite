@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-uefi = "0.22"
-uefi-services = "0.19"
+uefi = { version = "0.34", features = ["panic_handler", "qemu"] }
 common = { path = "../common" }
-x86_64 = "0.14.10"
+x86_64 = "0.15"

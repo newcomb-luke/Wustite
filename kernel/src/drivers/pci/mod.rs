@@ -268,6 +268,26 @@ impl PCIGeneralDevice {
         self.header.bar0
     }
 
+    pub fn bar1(&self) -> u32 {
+        self.header.bar1
+    }
+
+    pub fn bar2(&self) -> u32 {
+        self.header.bar2
+    }
+
+    pub fn bar3(&self) -> u32 {
+        self.header.bar3
+    }
+
+    pub fn bar4(&self) -> u32 {
+        self.header.bar4
+    }
+
+    pub fn prog_if(&self) -> u8 {
+        self.common_header.prog_if
+    }
+
     pub fn addr(&self) -> PCIAddress {
         self.addr
     }
@@ -646,6 +666,11 @@ impl PCICommonHeader {
 
 fn get_device_name(device_id: u16, vendor_id: u16) -> Option<&'static str> {
     match vendor_id {
+        // Intel
+        0x8086 => match device_id {
+            0x7010 => Some("Intel PIIX3 IDE"),
+            _ => None,
+        },
         // VMWare
         0x15AD => match device_id {
             0x0405 => Some("VMWare SVGA-II"),

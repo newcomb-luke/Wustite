@@ -1,5 +1,6 @@
 use uefi::{
-    prelude::BootServices,
+    boot::{open_protocol_exclusive, MemoryType},
+    prelude::*,
     proto::{
         loaded_image::LoadedImage,
         media::{
@@ -7,7 +8,6 @@ use uefi::{
             fs::SimpleFileSystem,
         },
     },
-    table::boot::MemoryType,
     CStr16,
 };
 
@@ -27,14 +27,13 @@ pub enum FindFileError {
 ///
 /// Relative paths are NOT allowed
 ///
-pub fn find_file(path: &str, boot_services: &BootServices) -> Result<RegularFile, FindFileError> {
-    let loaded_image = boot_services
-        .open_protocol_exclusive::<LoadedImage>(boot_services.image_handle())
+pub fn find_file(path: &str) -> Result<RegularFile, FindFileError> {
+    let loaded_image = open_protocol_exclusive::<LoadedImage>(boot::image_handle())
         .map_err(|_| FindFileError::UEFIError)?;
 
-    let mut volume_handle = boot_services
-        .open_protocol_exclusive::<SimpleFileSystem>(loaded_image.device())
-        .map_err(|_| FindFileError::UEFIError)?;
+    let mut volume_handle =
+        open_protocol_exclusive::<SimpleFileSystem>(loaded_image.device().unwrap())
+            .map_err(|_| FindFileError::UEFIError)?;
 
     let mut current_directory = volume_handle
         .open_volume()
@@ -101,10 +100,7 @@ pub enum ReadFileError {
 
 /// Loads a file into memory. Returns a slice to wherever the buffer we allocated
 /// from UEFI put it.
-pub fn read_file(
-    mut file: RegularFile,
-    boot_services: &BootServices,
-) -> Result<&'static mut [u8], ReadFileError> {
+pub fn read_file(mut file: RegularFile) -> Result<&'static mut [u8], ReadFileError> {
     let mut file_info_buffer = [0u8; 1024];
 
     let file_size = file
@@ -112,9 +108,10 @@ pub fn read_file(
         .map_err(|_| ReadFileError::UEFIError)?
         .file_size();
 
-    let load_area_start = boot_services
-        .allocate_pool(MemoryType::LOADER_DATA, file_size.try_into().unwrap())
-        .map_err(|_| ReadFileError::UEFIError)?;
+    let load_area_start =
+        boot::allocate_pool(MemoryType::LOADER_DATA, file_size.try_into().unwrap())
+            .map_err(|_| ReadFileError::UEFIError)?
+            .as_ptr();
 
     // SAFETY: We know that the buffer we asked for is at least file_size bytes long
     // otherwise the call would have failed, and the pointer is where it told us

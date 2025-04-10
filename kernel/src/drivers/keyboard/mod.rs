@@ -1,15 +1,18 @@
 use alloc::collections::VecDeque;
 use lazy_static::lazy_static;
-use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
 use spin::Mutex;
 use x86_64::instructions::port::Port;
 
 const SCANCODE_PORT: u16 = 0x60;
 
 lazy_static! {
-    static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = Mutex::new(
-        Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
-    );
+    static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =
+        Mutex::new(Keyboard::new(
+            ScancodeSet1::new(),
+            layouts::Us104Key,
+            HandleControl::Ignore
+        ));
 }
 
 pub const BACKSPACE: u8 = 8;

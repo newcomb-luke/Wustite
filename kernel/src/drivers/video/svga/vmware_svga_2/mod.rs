@@ -1,8 +1,8 @@
 use crate::{
     drivers::{
         pci::{
-            PCIGeneralDevice, BUS_MASTER_ENABLE, IO_SPACE_ENABLE, MEMORY_SPACE_ENABLE,
-            PCI_SUBSYSTEM,
+            BUS_MASTER_ENABLE, IO_SPACE_ENABLE, MEMORY_SPACE_ENABLE, PCI_SUBSYSTEM,
+            PCIGeneralDevice,
         },
         read_io_port_u32, write_io_port_u32,
     },
@@ -80,7 +80,10 @@ impl VMWareSVGADriver {
         }
 
         logln!("SVGA base port: 0x{:04x}", base_port);
-        logln!("Framebuffer start: 0x{:04x}", driver.read_framebuffer_start());
+        logln!(
+            "Framebuffer start: 0x{:04x}",
+            driver.read_framebuffer_start()
+        );
         logln!(
             "Framebuffer offset: 0x{:04x}",
             driver.read_framebuffer_offset()
@@ -130,14 +133,18 @@ impl VMWareSVGADriver {
 
     #[inline]
     unsafe fn write_register(&mut self, register: u32, value: u32) {
-        write_io_port_u32(self.base_port + SVGA_INDEX_OFFSET, register);
-        write_io_port_u32(self.base_port + SVGA_VALUE_OFFSET, value);
+        unsafe {
+            write_io_port_u32(self.base_port + SVGA_INDEX_OFFSET, register);
+            write_io_port_u32(self.base_port + SVGA_VALUE_OFFSET, value);
+        }
     }
 
     #[inline]
     unsafe fn read_register(&mut self, register: u32) -> u32 {
-        write_io_port_u32(self.base_port + SVGA_INDEX_OFFSET, register);
-        read_io_port_u32(self.base_port + SVGA_VALUE_OFFSET)
+        unsafe {
+            write_io_port_u32(self.base_port + SVGA_INDEX_OFFSET, register);
+            read_io_port_u32(self.base_port + SVGA_VALUE_OFFSET)
+        }
     }
 
     fn write_spec_id_register(&mut self, value: u32) {

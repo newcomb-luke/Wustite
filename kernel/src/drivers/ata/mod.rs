@@ -134,67 +134,67 @@ enum BusCommand {
 impl BusInner {
     unsafe fn write_drive_head(&mut self, data: u8) {
         const DRIVE_HEAD_REGISTER_OFFSET: u16 = 6;
-        write_io_port_u8(self.io_port_base + DRIVE_HEAD_REGISTER_OFFSET, data);
+        unsafe { write_io_port_u8(self.io_port_base + DRIVE_HEAD_REGISTER_OFFSET, data) }
     }
 
     unsafe fn read_regular_status(&mut self) -> u8 {
         const REGULAR_STATUS_OFFSET: u16 = 7;
-        read_io_port_u8(self.io_port_base + REGULAR_STATUS_OFFSET)
+        unsafe { read_io_port_u8(self.io_port_base + REGULAR_STATUS_OFFSET) }
     }
 
     unsafe fn read_alternate_status(&mut self) -> u8 {
         const ALTERNATE_STATUS_OFFSET: u16 = 0;
-        read_io_port_u8(self.control_port_base + ALTERNATE_STATUS_OFFSET).into()
+        unsafe { read_io_port_u8(self.control_port_base + ALTERNATE_STATUS_OFFSET).into() }
     }
 
     unsafe fn write_sector_count(&mut self, count: u8) {
         const SECTOR_COUNT_OFFSET: u16 = 2;
-        write_io_port_u8(self.io_port_base + SECTOR_COUNT_OFFSET, count)
+        unsafe { write_io_port_u8(self.io_port_base + SECTOR_COUNT_OFFSET, count) }
     }
 
     unsafe fn write_lba_lo(&mut self, value: u8) {
         const LBA_LO_OFFSET: u16 = 3;
-        write_io_port_u8(self.io_port_base + LBA_LO_OFFSET, value)
+        unsafe { write_io_port_u8(self.io_port_base + LBA_LO_OFFSET, value) }
     }
 
     unsafe fn write_lba_mid(&mut self, value: u8) {
         const LBA_MID_OFFSET: u16 = 4;
-        write_io_port_u8(self.io_port_base + LBA_MID_OFFSET, value)
+        unsafe { write_io_port_u8(self.io_port_base + LBA_MID_OFFSET, value) }
     }
 
     unsafe fn write_lba_hi(&mut self, value: u8) {
         const LBA_HI_OFFSET: u16 = 5;
-        write_io_port_u8(self.io_port_base + LBA_HI_OFFSET, value)
+        unsafe { write_io_port_u8(self.io_port_base + LBA_HI_OFFSET, value) }
     }
 
     unsafe fn read_sector_count(&mut self) -> u8 {
         const SECTOR_COUNT_OFFSET: u16 = 2;
-        read_io_port_u8(self.io_port_base + SECTOR_COUNT_OFFSET)
+        unsafe { read_io_port_u8(self.io_port_base + SECTOR_COUNT_OFFSET) }
     }
 
     unsafe fn read_lba_lo(&mut self) -> u8 {
         const LBA_LO_OFFSET: u16 = 3;
-        read_io_port_u8(self.io_port_base + LBA_LO_OFFSET)
+        unsafe { read_io_port_u8(self.io_port_base + LBA_LO_OFFSET) }
     }
 
     unsafe fn read_lba_mid(&mut self) -> u8 {
         const LBA_MID_OFFSET: u16 = 4;
-        read_io_port_u8(self.io_port_base + LBA_MID_OFFSET)
+        unsafe { read_io_port_u8(self.io_port_base + LBA_MID_OFFSET) }
     }
 
     unsafe fn read_lba_hi(&mut self) -> u8 {
         const LBA_HI_OFFSET: u16 = 5;
-        read_io_port_u8(self.io_port_base + LBA_HI_OFFSET)
+        unsafe { read_io_port_u8(self.io_port_base + LBA_HI_OFFSET) }
     }
 
     unsafe fn write_control_register(&mut self, value: u8) {
         const CONTROL_REGISTER_OFFSET: u16 = 0;
-        write_io_port_u8(self.control_port_base + CONTROL_REGISTER_OFFSET, value);
+        unsafe { write_io_port_u8(self.control_port_base + CONTROL_REGISTER_OFFSET, value) }
     }
 
     unsafe fn write_command_register(&mut self, value: u8) {
         const COMMAND_REGISTER_OFFSET: u16 = 7;
-        write_io_port_u8(self.io_port_base + COMMAND_REGISTER_OFFSET, value);
+        unsafe { write_io_port_u8(self.io_port_base + COMMAND_REGISTER_OFFSET, value) }
     }
 
     fn delay_400ns(&mut self) {

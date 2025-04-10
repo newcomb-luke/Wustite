@@ -15,12 +15,12 @@ mod memory;
 mod std;
 
 use common::BootInfo;
-use drivers::{keyboard::KEYBOARD_BUFFER, serial::SERIAL0};
+use drivers::{ide::IDEDriver, keyboard::KEYBOARD_BUFFER, serial::SERIAL0};
 use x86_64::VirtAddr;
 
 use crate::drivers::{
-    pci::{PCIDevice, PCI_SUBSYSTEM},
-    video::svga::vmware_svga_2::VMWareSVGADriver
+    pci::{PCI_SUBSYSTEM, PCIDevice},
+    video::svga::vmware_svga_2::VMWareSVGADriver,
 };
 
 fn start_kernel() {
@@ -37,6 +37,7 @@ fn start_kernel() {
     let pci_devices = PCI_SUBSYSTEM.enumerate_pci_devices();
 
     let mut vga_driver = None;
+    let mut ide_driver = None;
 
     for device in pci_devices {
         logln!("{}", device);
@@ -52,6 +53,9 @@ fn start_kernel() {
                         logln!("Failed to initialize SVGA driver: {e:?}");
                     }
                 }
+            }
+            if device.vendor_id() == 0x8086 && device.device_id() == 0x7010 {
+                ide_driver = Some(IDEDriver::new(device));
             }
         }
     }

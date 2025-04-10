@@ -1,8 +1,9 @@
 use core::mem::MaybeUninit;
 
 use uefi::{
-    prelude::BootServices,
-    table::boot::{MemoryDescriptor, MemoryMap, MemoryType},
+    boot::{MemoryDescriptor, MemoryType},
+    mem::memory_map::{MemoryMap, MemoryMapMut, MemoryMapOwned},
+    prelude::*,
 };
 
 use common::memory::{MemoryRegion, MemoryRegionType};
@@ -21,13 +22,11 @@ const MAX_NUM_REGIONS: usize = 256;
 /// AddressRangeMemory and must not report using AddressRangePersistentMemory.
 const IGNORE_BEFORE: u64 = 0x100000;
 
-pub fn allocate_memory_map_storage(
-    boot_services: &BootServices,
-) -> Result<MemoryRegions, uefi::Error> {
+pub fn allocate_memory_map_storage() -> Result<MemoryRegions, uefi::Error> {
     let regions_allocation_size = MAX_NUM_REGIONS * core::mem::size_of::<MemoryRegion>();
 
     let regions_buffer_start =
-        boot_services.allocate_pool(MemoryType::LOADER_DATA, regions_allocation_size)?;
+        boot::allocate_pool(MemoryType::LOADER_DATA, regions_allocation_size)?.as_ptr();
 
     Ok(MemoryRegions::new(
         regions_buffer_start as *mut MemoryRegion,
@@ -42,7 +41,7 @@ pub fn allocate_memory_map_storage(
 ///
 pub fn construct_memory_map(
     mut regions: MemoryRegions,
-    mut uefi_memory_map: MemoryMap<'static>,
+    mut uefi_memory_map: MemoryMapOwned,
 ) -> Result<(*const MemoryRegion, u64), GetMemoryMapError> {
     // Nice.
     uefi_memory_map.sort();
@@ -108,7 +107,7 @@ impl StackMemoryRegions {
 
     fn constrain(
         &mut self,
-        map: &MemoryMap,
+        map: &MemoryMapOwned,
         mut region: MemoryRegion,
     ) -> Result<(), GetMemoryMapError> {
         // See if this starts before 1 MiB (the ignore area)

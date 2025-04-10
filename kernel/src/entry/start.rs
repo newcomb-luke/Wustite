@@ -1,12 +1,12 @@
-use crate::{logln, hlt_loop};
+use crate::{hlt_loop, logln};
 use common::BootInfo;
 use core::panic::PanicInfo;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _start(boot_info: *const BootInfo) -> ! {
     crate::initialize_platform();
 
-    let boot_info = boot_info.as_ref().unwrap();
+    let boot_info = unsafe { boot_info.as_ref().unwrap() };
 
     crate::initialize_kernel(boot_info);
 
