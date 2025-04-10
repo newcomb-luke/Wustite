@@ -1,8 +1,13 @@
 use common::memory::MemoryRegion;
+use lazy_static::lazy_static;
+use spin::Mutex;
 use x86_64::{
     PhysAddr, VirtAddr,
     registers::control::Cr3,
-    structures::paging::{FrameAllocator, OffsetPageTable, PageTable, PhysFrame, Size4KiB},
+    structures::paging::{
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame,
+        Size4KiB,
+    },
 };
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
@@ -73,3 +78,85 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 
     unsafe { &mut *page_table_ptr }
 }
+
+pub struct KernelMapper {
+    inner: Mutex<Option<InnerKernelMapper>>,
+}
+
+struct InnerKernelMapper {
+    mapper: OffsetPageTable<'static>,
+    frame_allocator: BootInfoFrameAllocator,
+}
+
+impl KernelMapper {
+    pub const fn new() -> Self {
+        Self {
+            inner: Mutex::new(None),
+        }
+    }
+
+    pub fn init(&self, mapper: OffsetPageTable<'static>, frame_allocator: BootInfoFrameAllocator) {
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut inner = self.inner.lock();
+            *inner = Some(InnerKernelMapper::new(mapper, frame_allocator));
+        });
+    }
+
+    pub unsafe fn identity_map(&self, frame: PhysFrame, flags: PageTableFlags) -> Result<(), ()> {
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            if let Some(inner) = self.inner.lock().as_mut() {
+                unsafe {
+                    inner
+                        .mapper
+                        .identity_map(frame, flags, &mut inner.frame_allocator)
+                        .map_err(|_| ())?
+                        .flush();
+                }
+
+                Ok(())
+            } else {
+                Err(())
+            }
+        })
+    }
+
+    pub unsafe fn map_page(
+        &self,
+        address: VirtAddr,
+        flags: PageTableFlags,
+    ) -> Result<PhysAddr, ()> {
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            if let Some(inner) = self.inner.lock().as_mut() {
+                let frame = inner.frame_allocator.allocate_frame().ok_or(())?;
+
+                unsafe {
+                    inner
+                        .mapper
+                        .map_to(
+                            Page::from_start_address(address).map_err(|_| ())?,
+                            frame,
+                            flags,
+                            &mut inner.frame_allocator,
+                        )
+                        .map_err(|_| ())?
+                        .flush();
+                }
+
+                Ok(frame.start_address())
+            } else {
+                Err(())
+            }
+        })
+    }
+}
+
+impl InnerKernelMapper {
+    pub fn new(mapper: OffsetPageTable<'static>, frame_allocator: BootInfoFrameAllocator) -> Self {
+        Self {
+            mapper,
+            frame_allocator,
+        }
+    }
+}
+
+pub static MEMORY_MAPPER: KernelMapper = KernelMapper::new();

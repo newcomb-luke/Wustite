@@ -1,3 +1,5 @@
+use core::alloc::Layout;
+
 use x86_64::{
     VirtAddr,
     structures::paging::{

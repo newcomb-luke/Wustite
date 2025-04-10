@@ -29,7 +29,9 @@ fn main() {
 
     let fat_start_sector = boot_record.first_fat_sector() as u64;
 
-    block_device.read_block(fat_start_sector, &mut buffer).unwrap();
+    block_device
+        .read_block(fat_start_sector, &mut buffer)
+        .unwrap();
 
     for row in 0..16 {
         for col in 0..16 {
@@ -39,5 +41,8 @@ fn main() {
         println!();
     }
 
-    println!("Root directory cluster: {}", boot_record.root_directory_cluster());
+    println!(
+        "Root directory cluster: {}",
+        boot_record.root_directory_cluster()
+    );
 }

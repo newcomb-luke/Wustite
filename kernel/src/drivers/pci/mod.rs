@@ -671,6 +671,11 @@ fn get_device_name(device_id: u16, vendor_id: u16) -> Option<&'static str> {
             0x7010 => Some("Intel PIIX3 IDE"),
             _ => None,
         },
+        // Red Hat, Inc.
+        0x1B36 => match device_id {
+            0x0010 => Some("Red Hat QEMU NVM Express"),
+            _ => None,
+        },
         // VMWare
         0x15AD => match device_id {
             0x0405 => Some("VMWare SVGA-II"),

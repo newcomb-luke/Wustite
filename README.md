@@ -4,6 +4,7 @@ A custom toy operating system written mostly in the Rust programming language. T
 # Build Dependencies
 
 * qemu
+* ovmf
 * mtools
 * cargo
 

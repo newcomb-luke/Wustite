@@ -2,7 +2,6 @@ use bin_tools::read_u32_le;
 
 use crate::inode::BlockNumber;
 
-
 #[derive(Debug, Clone, Copy)]
 pub struct GroupDescriptor {
     /// offset 0x00

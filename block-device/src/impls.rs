@@ -1,6 +1,9 @@
 #![cfg(feature = "std")]
 
-use std::{fs::File, io::{Read, Seek, Write}};
+use std::{
+    fs::File,
+    io::{Read, Seek, Write},
+};
 
 use crate::BlockDevice;
 
@@ -9,14 +12,14 @@ const FILE_BLOCK_SIZE: u64 = 512;
 
 pub struct FileBlockDevice {
     file: File,
-    buffer: [u8; FILE_BLOCK_SIZE as usize]
+    buffer: [u8; FILE_BLOCK_SIZE as usize],
 }
 
 impl FileBlockDevice {
     pub fn new(file: File) -> Self {
         Self {
             file,
-            buffer: [0u8; FILE_BLOCK_SIZE as usize]
+            buffer: [0u8; FILE_BLOCK_SIZE as usize],
         }
     }
 }
@@ -54,7 +57,7 @@ impl BlockDevice for FileBlockDevice {
 
         self.file.seek(std::io::SeekFrom::Start(byte_offset))?;
         self.file.write_all(&self.buffer)?;
-        
+
         Ok(())
     }
 }

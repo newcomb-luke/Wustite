@@ -117,17 +117,22 @@ $(BUILD_DIR)/libide_driver.so: initramfs
 # QEMU Firmware
 #
 
-firmware: $(BUILD_DIR)/OVMF_VARS.fd
+firmware: $(BUILD_DIR)/OVMF_VARS.4m.fd $(BUILD_DIR)/OVMF_CODE.4m.fd
 
-$(BUILD_DIR)/OVMF_VARS.fd:
+$(BUILD_DIR)/OVMF_VARS.4m.fd:
 	cp /usr/share/edk2/x64/OVMF_VARS.4m.fd $(BUILD_DIR)
+
+$(BUILD_DIR)/OVMF_CODE.4m.fd:
+	cp /usr/share/edk2/x64/OVMF_CODE.4m.fd $(BUILD_DIR)
 
 run: hard_disk firmware
 	qemu-system-x86_64 --enable-kvm -cpu host -m 2G -s -d int -d mmu -d cpu_reset -d quest_errors -d page \
-		-device vmware-svga \
-		-drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd \
+		-drive if=pflash,format=raw,readonly=on,file=$(BUILD_DIR)/OVMF_CODE.4m.fd \
 		-drive if=pflash,format=raw,file=$(BUILD_DIR)/OVMF_VARS.4m.fd \
-		-drive if=ide,format=raw,file=$(HARD_DISK_IMG)
+		-device nvme,drive=drive0,serial=deadbeef \
+		-drive format=raw,file=$(HARD_DISK_IMG),if=none,id=drive0
+# -device vmware-svga
+# -device nvme,serial=S73WNJ0W624507R,drive=nvm
 
 FORCE: ;
 

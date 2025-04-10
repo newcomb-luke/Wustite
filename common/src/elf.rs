@@ -431,7 +431,7 @@ impl<'a> ElfFile<'a> {
     pub unsafe fn load_dynamic_file(
         &self,
         destination_buffer: &mut [u8],
-        load_virtual_address: u64
+        load_virtual_address: u64,
     ) -> Result<(), Elf64ProcessImageLoadingError> {
         if destination_buffer.len() < self.get_maximum_process_image_size() as usize {
             return Err(Elf64ProcessImageLoadingError::InsufficientMemoryError);

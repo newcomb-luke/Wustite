@@ -3,15 +3,15 @@
 use core::fmt::Debug;
 use core::fmt::Display;
 
-pub mod superblock;
-pub mod inode;
 pub mod groups;
+pub mod inode;
+pub mod superblock;
 
 pub const EXT4_MAGIC: u16 = 0xEF53;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Error {
-    BufferSizeTooSmall(u32)
+    BufferSizeTooSmall(u32),
 }
 
 impl Display for Error {

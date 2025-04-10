@@ -2,14 +2,7 @@ use core::fmt::{Debug, Display};
 
 use crate::Error;
 
-use bin_tools::{
-    read_i16_le,
-    read_u16_le,
-    read_u16_be,
-    read_u32_le,
-    read_u32_be,
-    read_u64_le
-};
+use bin_tools::{read_i16_le, read_u16_be, read_u16_le, read_u32_be, read_u32_le, read_u64_le};
 
 #[derive(Debug, Copy, Clone)]
 pub struct FileSystemState(u16);
@@ -43,7 +36,7 @@ pub enum SuperBlockErrorPolicy {
     Continue,
     RemountAsReadOnly,
     Panic,
-    Unknown
+    Unknown,
 }
 
 impl From<u16> for SuperBlockErrorPolicy {
@@ -52,7 +45,7 @@ impl From<u16> for SuperBlockErrorPolicy {
             1 => Self::Continue,
             2 => Self::RemountAsReadOnly,
             3 => Self::Panic,
-            _ => Self::Unknown
+            _ => Self::Unknown,
         }
     }
 }
@@ -65,7 +58,7 @@ pub enum FileSystemCreatorOS {
     FreeBSD,
     Lites,
     Wustite,
-    Unknown
+    Unknown,
 }
 
 impl From<u32> for FileSystemCreatorOS {
@@ -77,22 +70,26 @@ impl From<u32> for FileSystemCreatorOS {
             3 => Self::FreeBSD,
             4 => Self::Lites,
             5 => Self::Wustite,
-            _ => Self::Unknown
+            _ => Self::Unknown,
         }
     }
 }
 
 impl Display for FileSystemCreatorOS {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Linux => "Linux",
-            Self::Hurd => "Hurd",
-            Self::Masix => "Masix",
-            Self::FreeBSD => "FreeBSD",
-            Self::Lites => "Lites",
-            Self::Wustite => "Wustite",
-            Self::Unknown => "<unknown>"
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Linux => "Linux",
+                Self::Hurd => "Hurd",
+                Self::Masix => "Masix",
+                Self::FreeBSD => "FreeBSD",
+                Self::Lites => "Lites",
+                Self::Wustite => "Wustite",
+                Self::Unknown => "<unknown>",
+            }
+        )
     }
 }
 
@@ -100,7 +97,7 @@ impl Display for FileSystemCreatorOS {
 pub enum Revision {
     Original,
     V2,
-    Unknown
+    Unknown,
 }
 
 impl From<u32> for Revision {
@@ -108,18 +105,22 @@ impl From<u32> for Revision {
         match value {
             0 => Self::Original,
             1 => Self::V2,
-            _ => Self::Unknown
+            _ => Self::Unknown,
         }
     }
 }
 
 impl Display for Revision {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Original => "0 (original)",
-            Self::V2 => "1 (dynamic)",
-            Self::Unknown => "<unknown>"
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Original => "0 (original)",
+                Self::V2 => "1 (dynamic)",
+                Self::Unknown => "<unknown>",
+            }
+        )
     }
 }
 
@@ -148,13 +149,16 @@ impl Debug for UUID {
 
 impl Display for UUID {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
-        write!(f, "{:08x}-{:04x}-{:04x}-{:04x}-{:08x}{:04x}",
-                        read_u32_be(&self.0, 0),
-                        read_u16_be(&self.0, 4),
-                        read_u16_be(&self.0, 6),
-                        read_u16_be(&self.0, 8),
-                        read_u32_be(&self.0, 10),
-                        read_u16_be(&self.0, 14))
+        write!(
+            f,
+            "{:08x}-{:04x}-{:04x}-{:04x}-{:08x}{:04x}",
+            read_u32_be(&self.0, 0),
+            read_u16_be(&self.0, 4),
+            read_u16_be(&self.0, 6),
+            read_u16_be(&self.0, 8),
+            read_u32_be(&self.0, 10),
+            read_u16_be(&self.0, 14)
+        )
     }
 }
 
@@ -463,7 +467,7 @@ pub struct SuperBlock {
     // offset 0x280
     orphan_file_inode_number: u32,
     // offset 0x3fc
-    checksum: u32
+    checksum: u32,
 }
 
 impl SuperBlock {
@@ -572,7 +576,7 @@ impl SuperBlock {
             filename_encoding: read_u16_le(buffer, 0x27c),
             filename_encoding_flags: read_u16_le(buffer, 0x27e),
             orphan_file_inode_number: read_u32_le(buffer, 0x280),
-            checksum: read_u32_le(buffer, 0x3fc)
+            checksum: read_u32_le(buffer, 0x3fc),
         })
     }
 
@@ -615,13 +619,13 @@ impl SuperBlock {
 
 fn read_uuid(input: &[u8], offset: usize) -> UUID {
     let mut buffer: [u8; 16] = [0; 16];
-    buffer.copy_from_slice(&input[offset..offset+16]);
+    buffer.copy_from_slice(&input[offset..offset + 16]);
     UUID(buffer)
 }
 
 fn read_label(input: &[u8], offset: usize) -> VolumeLabel {
     let mut buffer: [u8; 16] = [0; 16];
-    buffer.copy_from_slice(&input[offset..offset+16]);
+    buffer.copy_from_slice(&input[offset..offset + 16]);
     VolumeLabel(buffer)
 }
 
@@ -631,26 +635,26 @@ fn read_mount_directory(input: &[u8], offset: usize) -> Option<MountDirectory> {
     }
 
     let mut buffer: [u8; 64] = [0; 64];
-    buffer.copy_from_slice(&input[offset..offset+64]);
+    buffer.copy_from_slice(&input[offset..offset + 64]);
 
     Some(MountDirectory(buffer))
 }
 
 fn read_function_name(input: &[u8], offset: usize) -> FunctionName {
     let mut buffer: [u8; 32] = [0; 32];
-    buffer.copy_from_slice(&input[offset..offset+32]);
+    buffer.copy_from_slice(&input[offset..offset + 32]);
     FunctionName(buffer)
 }
 
 fn read_mount_options(input: &[u8], offset: usize) -> MountOptions {
     let mut buffer: [u8; 64] = [0; 64];
-    buffer.copy_from_slice(&input[offset..offset+64]);
+    buffer.copy_from_slice(&input[offset..offset + 64]);
     MountOptions(buffer)
 }
 
 fn read_hash_seed(input: &[u8], offset: usize) -> HashSeed {
     let mut numbers: [u32; 4] = [0; 4];
-    
+
     for i in 0..numbers.len() {
         numbers[i] = read_u32_le(input, offset + i * 4);
     }
@@ -660,7 +664,7 @@ fn read_hash_seed(input: &[u8], offset: usize) -> HashSeed {
 
 fn read_journal_inodes_backup(input: &[u8], offset: usize) -> JournalInodesBackup {
     let mut numbers: [u32; 17] = [0; 17];
-    
+
     for i in 0..numbers.len() {
         numbers[i] = read_u32_le(input, offset + i * 4);
     }
@@ -670,7 +674,7 @@ fn read_journal_inodes_backup(input: &[u8], offset: usize) -> JournalInodesBacku
 
 fn read_backup_block_groups(input: &[u8], offset: usize) -> BackupBlockGroups {
     let mut numbers: [u32; 2] = [0; 2];
-    
+
     for i in 0..numbers.len() {
         numbers[i] = read_u32_le(input, offset + i * 4);
     }
@@ -680,12 +684,12 @@ fn read_backup_block_groups(input: &[u8], offset: usize) -> BackupBlockGroups {
 
 fn read_encryption_algorithms(input: &[u8], offset: usize) -> EncryptionAlgorithms {
     let mut buffer: [u8; 4] = [0; 4];
-    buffer.copy_from_slice(&input[offset..offset+4]);
+    buffer.copy_from_slice(&input[offset..offset + 4]);
     EncryptionAlgorithms(buffer)
 }
 
 fn read_encryption_salt(input: &[u8], offset: usize) -> EncryptionSalt {
     let mut buffer: [u8; 16] = [0; 16];
-    buffer.copy_from_slice(&input[offset..offset+16]);
+    buffer.copy_from_slice(&input[offset..offset + 16]);
     EncryptionSalt(buffer)
 }

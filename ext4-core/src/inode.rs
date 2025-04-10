@@ -43,7 +43,7 @@ pub struct Inode {
     /// offset 0x78
     osd_2_2: u32,
     /// offset 0x7c
-    osd_2_3: u32
+    osd_2_3: u32,
 }
 
 impl Inode {
@@ -85,26 +85,28 @@ impl From<u16> for Mode {
 
 impl Debug for Mode {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}{}{}{}{}{}{} {}{}{} {}{}{}{}{}{}{}{}{}",
-               if self.is_socket() { 's' } else { '-' },
-               if self.is_symbolic_link() { 'l' } else { '-' },
-               if self.is_regular_file() { 'f' } else { '-' },
-               if self.is_block_device() { 'b' } else { '-' },
-               if self.is_directory() { 'd' } else { '-' },
-               if self.is_character_device() { 'c' } else { '-' },
-               if self.is_fifo() { 'o' } else { '-' },
-               if self.is_set_uid() { 'u' } else { '-' },
-               if self.is_set_gid() { 'g' } else { '-' },
-               if self.is_sticky_bit_set() { 's' } else { '-' },
-               if self.user_read() { 'r' } else { '-' },
-               if self.user_write() { 'w' } else { '-' },
-               if self.user_execute() { 'x' } else { '-' },
-               if self.group_read() { 'r' } else { '-' },
-               if self.group_write() { 'w' } else { '-' },
-               if self.group_execute() { 'x' } else { '-' },
-               if self.others_read() { 'r' } else { '-' },
-               if self.others_write() { 'w' } else { '-' },
-               if self.others_execute() { 'x' } else { '-' },
+        write!(
+            f,
+            "{}{}{}{}{}{}{} {}{}{} {}{}{}{}{}{}{}{}{}",
+            if self.is_socket() { 's' } else { '-' },
+            if self.is_symbolic_link() { 'l' } else { '-' },
+            if self.is_regular_file() { 'f' } else { '-' },
+            if self.is_block_device() { 'b' } else { '-' },
+            if self.is_directory() { 'd' } else { '-' },
+            if self.is_character_device() { 'c' } else { '-' },
+            if self.is_fifo() { 'o' } else { '-' },
+            if self.is_set_uid() { 'u' } else { '-' },
+            if self.is_set_gid() { 'g' } else { '-' },
+            if self.is_sticky_bit_set() { 's' } else { '-' },
+            if self.user_read() { 'r' } else { '-' },
+            if self.user_write() { 'w' } else { '-' },
+            if self.user_execute() { 'x' } else { '-' },
+            if self.group_read() { 'r' } else { '-' },
+            if self.group_write() { 'w' } else { '-' },
+            if self.group_execute() { 'x' } else { '-' },
+            if self.others_read() { 'r' } else { '-' },
+            if self.others_write() { 'w' } else { '-' },
+            if self.others_execute() { 'x' } else { '-' },
         )
     }
 }
@@ -203,24 +205,26 @@ impl From<u32> for Flags {
 
 impl Debug for Flags {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}{}{}{} {}{}{}{} {}{}{}{} {}{}{}{}",
-               if self.secure_deletion() { 's' } else { '-' },
-               if self.record_for_undelete() { 'd' } else { '-' },
-               if self.compress_file() { 'c' } else { '-' },
-               if self.synchronous_updates() { 'u' } else { '-' },
-               if self.immutable_file() { 'i' } else { '-' },
-               if self.append_only() { 'a' } else { '-' },
-               if self.no_dump_file() { 'd' } else { '-' },
-               if self.no_atime() { 't' } else { '-' },
-               if self.dirty() { 'd' } else { '-' },
-               if self.compressed_blocks() { 'b' } else { '-' },
-               if self.no_compress() { 'n' } else { '-' },
-               if self.compression_error() { 'e' } else { '-' },
-               if self.btree_directory() { 'b' } else { '-' },
-               if self.hash_directory() { 'h' } else { '-' },
-               if self.afs_directory() { 'a' } else { '-' },
-               if self.journal_data() { 'j' } else { '-' },
-               )
+        write!(
+            f,
+            "{}{}{}{} {}{}{}{} {}{}{}{} {}{}{}{}",
+            if self.secure_deletion() { 's' } else { '-' },
+            if self.record_for_undelete() { 'd' } else { '-' },
+            if self.compress_file() { 'c' } else { '-' },
+            if self.synchronous_updates() { 'u' } else { '-' },
+            if self.immutable_file() { 'i' } else { '-' },
+            if self.append_only() { 'a' } else { '-' },
+            if self.no_dump_file() { 'd' } else { '-' },
+            if self.no_atime() { 't' } else { '-' },
+            if self.dirty() { 'd' } else { '-' },
+            if self.compressed_blocks() { 'b' } else { '-' },
+            if self.no_compress() { 'n' } else { '-' },
+            if self.compression_error() { 'e' } else { '-' },
+            if self.btree_directory() { 'b' } else { '-' },
+            if self.hash_directory() { 'h' } else { '-' },
+            if self.afs_directory() { 'a' } else { '-' },
+            if self.journal_data() { 'j' } else { '-' },
+        )
     }
 }
 
@@ -321,7 +325,7 @@ impl From<BlockNumber> for u32 {
 impl Blocks {
     pub fn read(buffer: &[u8]) -> Self {
         let mut data: [u32; 15] = [0; 15];
-        
+
         for i in 0..data.len() {
             data[i] = read_u32_le(buffer, i * 4);
         }
@@ -331,9 +335,7 @@ impl Blocks {
 
     pub fn blocks(&self) -> &[BlockNumber; 12] {
         // SAFETY: https://users.rust-lang.org/t/unsafe-conversion-from-slice-to-array-reference/88910/11
-        unsafe {
-            &*(&self.0[0..12]).as_ptr().cast()
-        }
+        unsafe { &*(&self.0[0..12]).as_ptr().cast() }
     }
 
     pub fn indirect_block(&self) -> BlockNumber {

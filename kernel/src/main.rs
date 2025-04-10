@@ -15,8 +15,15 @@ mod memory;
 mod std;
 
 use common::BootInfo;
-use drivers::{ide::IDEDriver, keyboard::KEYBOARD_BUFFER, serial::SERIAL0};
-use x86_64::VirtAddr;
+use drivers::{
+    ide::IDEDriver, keyboard::KEYBOARD_BUFFER, nvme::NVMEDriver, pci::PCIDeviceClass,
+    serial::SERIAL0,
+};
+use memory::MEMORY_MAPPER;
+use x86_64::{
+    PhysAddr, VirtAddr,
+    structures::paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
+};
 
 use crate::drivers::{
     pci::{PCI_SUBSYSTEM, PCIDevice},
@@ -36,34 +43,47 @@ fn start_kernel() {
 
     let pci_devices = PCI_SUBSYSTEM.enumerate_pci_devices();
 
-    let mut vga_driver = None;
-    let mut ide_driver = None;
+    // let mut vga_driver = None;
+    // let mut ide_driver = None;
+    let mut nvme_driver = None;
 
     for device in pci_devices {
         logln!("{}", device);
 
         #[allow(irrefutable_let_patterns)]
         if let PCIDevice::General(device) = device {
-            if device.vendor_id() == 0x15AD && device.device_id() == 0x0405 {
-                match VMWareSVGADriver::new(device) {
+            if device.device_class()
+                == PCIDeviceClass::MassStorage(drivers::pci::MassStorageController::NVMController)
+            {
+                match NVMEDriver::new(device) {
                     Ok(driver) => {
-                        vga_driver = Some(driver);
+                        nvme_driver = Some(driver);
                     }
                     Err(e) => {
-                        logln!("Failed to initialize SVGA driver: {e:?}");
+                        logln!("Failed to initialized NVMe driver: {e:?}");
                     }
                 }
             }
-            if device.vendor_id() == 0x8086 && device.device_id() == 0x7010 {
-                ide_driver = Some(IDEDriver::new(device));
-            }
+            // if device.vendor_id() == 0x15AD && device.device_id() == 0x0405 {
+            //     match VMWareSVGADriver::new(device) {
+            //         Ok(driver) => {
+            //             vga_driver = Some(driver);
+            //         }
+            //         Err(e) => {
+            //             logln!("Failed to initialize SVGA driver: {e:?}");
+            //         }
+            //     }
+            // }
+            // if device.vendor_id() == 0x8086 && device.device_id() == 0x7010 {
+            //     ide_driver = Some(IDEDriver::new(device));
+            // }
         }
     }
 
-    if vga_driver.is_none() {
-        logln!("No SVGA-compatible graphics device found");
-        logln!("Failed to initialize graphics");
-    }
+    // if vga_driver.is_none() {
+    //     logln!("No SVGA-compatible graphics device found");
+    //     logln!("Failed to initialize graphics");
+    // }
 }
 
 fn initialize_kernel(boot_info: &BootInfo) {
@@ -87,6 +107,7 @@ fn initialize_kernel(boot_info: &BootInfo) {
     allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("Kernel heap initialization failed");
 
+    MEMORY_MAPPER.init(mapper, frame_allocator);
     KEYBOARD_BUFFER.init();
 }
 

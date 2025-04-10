@@ -6,6 +6,7 @@ pub mod ata;
 pub mod cmos;
 pub mod ide;
 pub mod keyboard;
+pub mod nvme;
 pub mod pci;
 pub mod serial;
 pub mod video;

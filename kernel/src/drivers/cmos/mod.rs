@@ -24,11 +24,7 @@ impl CMOSInner {
     }
 
     fn nmi_value(&self) -> u8 {
-        if self.nmi_disabled {
-            1 << 7
-        } else {
-            0
-        }
+        if self.nmi_disabled { 1 << 7 } else { 0 }
     }
 
     fn read_register(&mut self, register: u8) -> u8 {

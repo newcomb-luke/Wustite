@@ -1,9 +1,39 @@
 use crate::logln;
 
-use super::pci::PCIGeneralDevice;
+use super::{pci::PCIGeneralDevice, write_io_port_u8, write_io_port_u16};
+
+const REG_DATA: u16 = 0;
+const REG_ERROR: u16 = 1;
+const REG_FEATURES: u16 = 1;
+const REG_SECTOR_COUNT: u16 = 2;
+const REG_LBA_LO: u16 = 3;
+const REG_LBA_MID: u16 = 4;
+const REG_LBA_HI: u16 = 5;
+const REG_DRIVE: u16 = 6;
+const REG_STATUS: u16 = 7;
+const REG_COMMAND: u16 = 7;
+
+const REG_ALT_STATUS: u16 = 0;
+const REG_CONTROL: u16 = 0;
+const REG_DRIVE_ADDRESS: u16 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Drive {
+    Master,
+    Slave,
+}
+
+impl Drive {
+    fn value(&self) -> u8 {
+        match self {
+            Self::Master => 0xA0,
+            Self::Slave => 0xB0,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
-pub struct IDEChannel {
+struct IDEChannel {
     base: u16,
     control: u16,
     bus_master: Option<u16>,
@@ -45,6 +75,40 @@ impl IDEChannel {
             }
         }
     }
+
+    fn control_port(&self) -> u16 {
+        self.control + REG_CONTROL
+    }
+
+    fn drive_select_port(&self) -> u16 {
+        self.base + REG_DRIVE
+    }
+
+    fn sector_count_port(&self) -> u16 {
+        self.base + REG_SECTOR_COUNT
+    }
+
+    fn write_control(&mut self, value: u8) {
+        unsafe {
+            write_io_port_u8(self.control_port(), value);
+        }
+    }
+
+    fn set_interrupts(&mut self, enabled: bool) {
+        self.write_control(if enabled { 0 } else { 1 } << 1);
+    }
+
+    fn select_drive(&mut self, drive: Drive) {
+        unsafe {
+            write_io_port_u8(self.drive_select_port(), drive.value());
+        }
+    }
+
+    fn set_sector_count(&mut self, value: u16) {
+        unsafe {
+            write_io_port_u16(self.sector_count_port(), value);
+        }
+    }
 }
 
 pub struct IDEDriver {
@@ -58,9 +122,6 @@ impl IDEDriver {
 
         let channel1 = IDEChannel::get_primary_channel(&interface, &device);
         let channel2 = IDEChannel::get_secondary_channel(&interface, &device);
-
-        logln!("IDE Channel 1: {:#?}", channel1);
-        logln!("IDE Channel 2: {:#?}", channel2);
 
         Self {
             device,
