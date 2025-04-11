@@ -226,7 +226,7 @@ impl Display for PCIDevice {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PCIGeneralDevice {
     addr: PCIAddress,
     common_header: PCICommonHeader,
@@ -291,9 +291,17 @@ impl PCIGeneralDevice {
     pub fn addr(&self) -> PCIAddress {
         self.addr
     }
+
+    pub fn interrupt_line(&self) -> u8 {
+        self.header.interrupt_line
+    }
+
+    pub fn interrupt_pin(&self) -> u8 {
+        self.header.interrupt_pin
+    }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PCIAddress {
     pub bus: u8,
     pub device: u8,
@@ -327,7 +335,7 @@ impl Display for PCIAddress {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PCIGeneralHeader {
     bar0: u32,
     bar1: u32,
@@ -346,7 +354,7 @@ pub struct PCIGeneralHeader {
     interrupt_line: u8,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PCICommonHeader {
     pub device_id: u16,
     pub vendor_id: u16,
