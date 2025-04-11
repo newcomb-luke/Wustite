@@ -1,20 +1,25 @@
-use core::{alloc::Layout, ptr::NonNull};
+use core::alloc::Layout;
 
 use x86_64::{
-    PhysAddr,
-    structures::paging::{PageSize, PageTableFlags, PhysFrame},
+    PhysAddr, VirtAddr,
+    structures::paging::{PageTableFlags, PhysFrame},
 };
 
-use crate::{allocator::ALLOCATOR, logln, memory::MEMORY_MAPPER};
+use crate::{allocator::ALLOCATOR, drivers::pci::PCI_SUBSYSTEM, logln, memory::MEMORY_MAPPER};
 
 use super::pci::PCIGeneralDevice;
 
 const VERSION_REG: u64 = 0x08;
 const CONTROLLER_CONFIG_REG: u64 = 0x14;
+const ADMIN_QUEUE_REG: u64 = 0x24;
 const ADMIN_SUBMISSION_REG: u64 = 0x28;
 const ADMIN_COMPLETION_REG: u64 = 0x30;
 
-const QUEUE_SIZE: u64 = 4096;
+const QUEUE_SIZE_BYTES: u64 = 4096;
+const SUBMISSION_QUEUE_ENTRY_SIZE: u64 = 64;
+const COMPLETION_QUEUE_ENTRY_SIZE: u64 = 16;
+const SUBMISSION_QUEUE_SIZE_ENTRIES: u64 = QUEUE_SIZE_BYTES / SUBMISSION_QUEUE_ENTRY_SIZE;
+const COMPLETION_QUEUE_SIZE_ENTRIES: u64 = QUEUE_SIZE_BYTES / COMPLETION_QUEUE_ENTRY_SIZE;
 
 type DriverResult<T> = Result<T, NVMEDriverError>;
 
@@ -81,7 +86,7 @@ pub struct NVMEDriver {
 }
 
 impl NVMEDriver {
-    pub fn new(device: PCIGeneralDevice) -> DriverResult<Self> {
+    pub fn new(mut device: PCIGeneralDevice) -> DriverResult<Self> {
         let base_address = ((device.bar1() as u64) << 32) | (device.bar0() & 0xFFFFFFF0) as u64;
         let capability_stride = ((base_address >> 12) & 0xF) as u8;
 
@@ -99,11 +104,14 @@ impl NVMEDriver {
 
         logln!("Successfully mapped NVMe base address");
 
+        // Enable bus mastering, memory space, and I/O space
+        PCI_SUBSYSTEM.send_command(&mut device, 0b111);
+
         // Reset the controller
         Self::set_controller_enabled(base_address, false);
 
-        let admin_submission_queue = Self::create_admin_submission_queue(base_address)?;
-        let admin_completion_queue = Self::create_admin_completion_queue(base_address)?;
+        let (admin_submission_queue, admin_completion_queue) =
+            Self::create_admin_queues(base_address)?;
 
         logln!(
             "Admin submission queue created: addr {:08x}, size {}",
@@ -152,34 +160,64 @@ impl NVMEDriver {
         }
     }
 
-    fn allocate_nvme_page(size: usize) -> DriverResult<NonNull<u8>> {
-        ALLOCATOR
+    fn allocate_nvme_page(size: usize) -> DriverResult<(VirtAddr, PhysAddr)> {
+        let virt_ptr = ALLOCATOR
             .lock()
             .allocate_first_fit(
                 Layout::from_size_align(size, 32)
                     .map_err(|_| NVMEDriverError::MemoryMappingFailed)?,
             )
-            .map_err(|_| NVMEDriverError::MemoryMappingFailed)
+            .map_err(|_| NVMEDriverError::MemoryMappingFailed)?;
+
+        let virt_addr = VirtAddr::from_ptr(virt_ptr.as_ptr());
+
+        let phys_addr = unsafe {
+            MEMORY_MAPPER
+                .virt_to_phys(VirtAddr::new(virt_ptr.as_ptr() as u64))
+                .map_err(|_| NVMEDriverError::MemoryMappingFailed)
+        }?;
+
+        Ok((virt_addr, phys_addr))
     }
 
-    fn create_admin_submission_queue(base_address: u64) -> DriverResult<NVMEQueue> {
-        let address = Self::allocate_nvme_page(QUEUE_SIZE as usize)?.as_ptr() as u64;
-
+    fn create_admin_queues(base_address: u64) -> DriverResult<(NVMEQueue, NVMEQueue)> {
         unsafe {
-            Self::write_nvme_reg(base_address, ADMIN_SUBMISSION_REG, address as u32);
-        }
+            let submission_queue = Self::create_admin_submission_queue(base_address)?;
+            let completion_queue = Self::create_admin_completion_queue(base_address)?;
 
-        Ok(NVMEQueue::new(address, QUEUE_SIZE))
+            Self::write_admin_queue_attributes(base_address);
+
+            Ok((submission_queue, completion_queue))
+        }
     }
 
-    fn create_admin_completion_queue(base_address: u64) -> DriverResult<NVMEQueue> {
-        let address = Self::allocate_nvme_page(QUEUE_SIZE as usize)?.as_ptr() as u64;
+    unsafe fn create_admin_submission_queue(base_address: u64) -> DriverResult<NVMEQueue> {
+        let (virt_addr, phys_addr) = Self::allocate_nvme_page(QUEUE_SIZE_BYTES as usize)?;
 
         unsafe {
-            Self::write_nvme_reg(base_address, ADMIN_COMPLETION_REG, address as u32);
+            Self::write_nvme_reg(base_address, ADMIN_SUBMISSION_REG, phys_addr.as_u64() as u32);
         }
 
-        Ok(NVMEQueue::new(address, QUEUE_SIZE))
+        Ok(NVMEQueue::new(virt_addr.as_u64(), QUEUE_SIZE_BYTES))
+    }
+
+    unsafe fn create_admin_completion_queue(base_address: u64) -> DriverResult<NVMEQueue> {
+        let (virt_addr, phys_addr) = Self::allocate_nvme_page(QUEUE_SIZE_BYTES as usize)?;
+
+        unsafe {
+            Self::write_nvme_reg(base_address, ADMIN_COMPLETION_REG, phys_addr.as_u64() as u32);
+        }
+
+        Ok(NVMEQueue::new(virt_addr.as_u64(), QUEUE_SIZE_BYTES))
+    }
+
+    unsafe fn write_admin_queue_attributes(base_address: u64) {
+        let value =
+            ((COMPLETION_QUEUE_SIZE_ENTRIES - 1) << 16 | (SUBMISSION_QUEUE_ENTRY_SIZE - 1)) as u32;
+
+        unsafe {
+            Self::write_nvme_reg(base_address, ADMIN_QUEUE_REG, value);
+        }
     }
 
     unsafe fn write_nvme_reg(base_address: u64, offset: u64, value: u32) {

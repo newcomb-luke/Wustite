@@ -1,12 +1,11 @@
 use common::memory::MemoryRegion;
-use lazy_static::lazy_static;
 use spin::Mutex;
 use x86_64::{
     PhysAddr, VirtAddr,
     registers::control::Cr3,
     structures::paging::{
         FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame,
-        Size4KiB,
+        Size4KiB, Translate,
     },
 };
 
@@ -50,6 +49,8 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
     }
 }
 
+pub static mut PHYS_MEM_OFFSET: u64 = 0;
+
 /// Initialize a new OffsetPageTable.
 ///
 /// This function is unsafe because the caller must guarantee that the
@@ -58,6 +59,8 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
 /// to avoid aliasing `&mut` references (which is undefined behavior).
 pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
     unsafe {
+        PHYS_MEM_OFFSET = physical_memory_offset.as_u64();
+
         let level_4_table = active_level_4_table(physical_memory_offset);
         OffsetPageTable::new(level_4_table, physical_memory_offset)
     }
@@ -143,6 +146,16 @@ impl KernelMapper {
                 }
 
                 Ok(frame.start_address())
+            } else {
+                Err(())
+            }
+        })
+    }
+
+    pub unsafe fn virt_to_phys(&self, address: VirtAddr) -> Result<PhysAddr, ()> {
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            if let Some(inner) = self.inner.lock().as_mut() {
+                inner.mapper.translate_addr(address).ok_or(())
             } else {
                 Err(())
             }
