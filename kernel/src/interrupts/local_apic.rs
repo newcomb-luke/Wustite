@@ -15,6 +15,8 @@ const TIMER_INITIAL_COUNT_REG: u16 = 0x380;
 const TIMER_CURRENT_COUNT_REG: u16 = 0x390;
 const TIMER_DIVIDE_CONFIG_REG: u16 = 0x3E0;
 
+const SIV_ENABLE_BIT: u32 = 0x100;
+
 pub enum LocalInterrupt {
     LInt0,
     LInt1,
@@ -55,7 +57,7 @@ pub static LOCAL_APIC: Once<LocalApic> = Once::new();
 
 /// The caller must guarantee that this is in fact the proper physical base address for the LAPIC
 pub unsafe fn initialize_local_apic(base_address: u64) {
-    logln!("[info] Initializing LAPIC at 0x{:08x}", base_address);
+    logln!("[info] LAPIC: Initializing at 0x{:08x}", base_address);
 
     if LOCAL_APIC.is_completed() {
         panic!("Attempted to initialize LAPIC twice");
@@ -83,7 +85,43 @@ pub unsafe fn initialize_local_apic(base_address: u64) {
 
     LOCAL_APIC.call_once(|| LocalApic::new(virt_base_address.as_u64()));
 
-    logln!("[info] LAPIC initialized");
+    logln!("[info] LAPIC: Initialized");
+}
+
+/// SAFETY: The local ACPI must have been initialized previously
+/// Interrupts must not be enabled
+pub unsafe fn enable_local_apic(spurious_interrupt_vector: u8) {
+    let value = SIV_ENABLE_BIT | (spurious_interrupt_vector as u32);
+
+    // This is safe because LOCAL_APIC is guaranteed to be initialized according to the caller
+    unsafe {
+        LOCAL_APIC
+            .get()
+            .unwrap()
+            .write_register(SPURIOUS_INTERRUPT_VECTOR_REG, value);
+    }
+
+    logln!(
+        "[info] LAPIC: Enabled with spurious interrupt vector of 0x{:02x}",
+        spurious_interrupt_vector
+    );
+}
+
+/// SAFETY: The local ACPI must have been initialized previously
+pub unsafe fn disable_local_apic() {
+    let enable_bit_mask = !SIV_ENABLE_BIT;
+
+    // This is safe because LOCAL_APIC is guaranteed to be initialized according to the caller
+    unsafe {
+        let local_apic = LOCAL_APIC.get().unwrap();
+
+        let current_value = local_apic.read_register(SPURIOUS_INTERRUPT_VECTOR_REG);
+        let new_value = current_value & enable_bit_mask;
+
+        local_apic.write_register(SPURIOUS_INTERRUPT_VECTOR_REG, new_value);
+    }
+
+    logln!("[info] LAPIC: Disabled");
 }
 
 /// SAFETY: The local ACPI must have been initialized previously
@@ -102,7 +140,7 @@ pub unsafe fn configure_nmi(local_interrupt: LocalInterrupt) {
     }
 
     logln!(
-        "[info] LAPIC local interrupt {} set as NMI",
+        "[info] LAPIC: Local interrupt {} set as NMI",
         local_interrupt.as_u8()
     );
 }

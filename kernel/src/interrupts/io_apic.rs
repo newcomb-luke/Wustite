@@ -52,7 +52,7 @@ impl IoApic {
 
     pub fn init(&self, base_address: u64, id: u8, global_system_interrupt_base: u32) {
         logln!(
-            "[info] Initializing IO APIC {} at 0x{:08x}",
+            "[info] IO APIC {}: Initializing at 0x{:08x}",
             id,
             base_address
         );
@@ -89,7 +89,23 @@ impl IoApic {
             ));
         }
 
-        logln!("[info] IO APIC {} initialized", id);
+        logln!("[info] IO APIC {}: Initialized", id);
+    }
+
+    pub fn is_redirect_set(&self, gsi: u32) -> bool {
+        let lower_register = self.first_redirect_register_for_gsi(gsi);
+        // let upper_register = lower_register + 1;
+
+        if let Some(inner) = self.inner.lock().as_mut() {
+            let low = inner.read_register(lower_register);
+            // let high = inner.read_register(upper_register);
+
+            let vector = (low & 0xFF) as u8;
+
+            vector != 0
+        } else {
+            panic!("Attempted to read IO APIC redirect before IO APIC was initialized");
+        }
     }
 
     pub fn set_redirect(
@@ -122,7 +138,7 @@ impl IoApic {
         }
 
         logln!(
-            "[info] IO APIC redirect set for GSI {} to vector 0x{:02x}",
+            "[info] IO APIC 0: Redirect set for GSI {} to vector 0x{:02x}",
             gsi,
             vector
         );

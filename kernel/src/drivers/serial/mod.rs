@@ -30,7 +30,7 @@ pub fn initialize_serial() {
         serial.initialize();
     }
 
-    logln!("[info] Serial initialized");
+    logln!("[info] Serial: Initialized");
 }
 
 pub struct SerialPort {

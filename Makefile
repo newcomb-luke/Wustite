@@ -126,14 +126,18 @@ $(BUILD_DIR)/OVMF_CODE.4m.fd:
 	cp /usr/share/edk2/x64/OVMF_CODE.4m.fd $(BUILD_DIR)
 
 run: hard_disk firmware
-	qemu-system-x86_64 --enable-kvm -cpu host -m 2G -s -d int -d mmu -d cpu_reset -d quest_errors -d page \
+	qemu-system-x86_64 \
+ 		-machine pc,accel=tcg -cpu qemu64 -m 2G \
 		-drive if=pflash,format=raw,readonly=on,file=$(BUILD_DIR)/OVMF_CODE.4m.fd \
 		-drive if=pflash,format=raw,file=$(BUILD_DIR)/OVMF_VARS.4m.fd \
-		-device nvme,drive=drive0,serial=deadbeef \
+		-device nvme,drive=drive0,serial=S73WNJ0W624507R \
 		-drive format=raw,file=$(HARD_DISK_IMG),if=none,id=drive0 \
-		--trace "pci*" -D trace.log
+		-serial stdio \
+		-D qemu.log \
+		-d int,mmu,cpu_reset,guest_errors,page
+# 		-machine pc,accel=kvm --enable-kvm -cpu host -m 2G \
+# --trace "pci*" -D trace.log
 # -device vmware-svga
-# -device nvme,serial=S73WNJ0W624507R,drive=nvm
 
 FORCE: ;
 

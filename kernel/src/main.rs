@@ -20,6 +20,7 @@ use drivers::{
     pci::PCIDeviceClass,
     serial::{SERIAL0, initialize_serial},
 };
+use kernel::hlt_loop;
 use memory::initialize_memory;
 
 use crate::drivers::pci::{PCI_SUBSYSTEM, PCIDevice};
@@ -36,6 +37,14 @@ fn start_kernel(boot_info: &BootInfo) {
     init_acpi(boot_info);
 
     KEYBOARD_BUFFER.init();
+
+    unsafe {
+        crate::interrupts::local_apic::enable_local_apic(0xFF);
+    }
+
+    x86_64::instructions::interrupts::enable();
+
+    hlt_loop();
 
     let pci_devices = PCI_SUBSYSTEM.enumerate_pci_devices();
 

@@ -1,19 +1,14 @@
-use core::ptr::NonNull;
+use core::str::FromStr;
 
-use acpi::{
-    AcpiHandler, AcpiTables, InterruptModel, PhysicalMapping, platform::interrupt::NmiProcessor,
-};
-use alloc::boxed::Box;
-use aml::{AmlContext, Handler};
+use acpi::{AcpiTables, InterruptModel, PciConfigRegions, platform::interrupt::NmiProcessor};
+use alloc::{boxed::Box, vec::Vec};
+use aml::{AmlContext, AmlName, AmlValue, LevelType};
 use common::BootInfo;
-use x86_64::{PhysAddr, structures::paging::PageTableFlags};
+use devices::{AcpiDevice, acpi_device_from_hid};
+use handlers::{KernelAcpiHandler, KernelAmlHandler};
+use x86_64::PhysAddr;
 
 use crate::{
-    drivers::{
-        pci::{PCI_SUBSYSTEM, PCIAddress},
-        read_io_port_u8, read_io_port_u16, read_io_port_u32, write_io_port_u8, write_io_port_u16,
-        write_io_port_u32,
-    },
     interrupts::{
         io_apic::{DeliveryMode, Destination, PinPolarity, TriggerMode},
         local_apic::LocalInterrupt,
@@ -22,8 +17,11 @@ use crate::{
     memory::MEMORY_MAPPER,
 };
 
+mod devices;
+mod handlers;
+
 pub fn init_acpi(boot_info: &BootInfo) {
-    logln!("[info] Initializaing ACPI");
+    logln!("[info] ACPI: Initializing");
 
     let tables = unsafe {
         AcpiTables::from_rsdp(KernelAcpiHandler, boot_info.acpi_rsdp_address as usize).unwrap()
@@ -45,7 +43,9 @@ pub fn init_acpi(boot_info: &BootInfo) {
     aml.parse_table(dsdt_table_slice).unwrap();
     aml.initialize_objects().unwrap();
 
-    logln!("[info] ACPI initialized");
+    logln!("[info] ACPI: Initialized");
+
+    logln!("[info] ACPI: Initializing interrupt controllers");
 
     if let InterruptModel::Apic(interrupt_model) = tables.platform_info().unwrap().interrupt_model {
         // We know that this is safe because we get the local apic address straight from the ACPI tables
@@ -105,62 +105,161 @@ pub fn init_acpi(boot_info: &BootInfo) {
         }
     }
 
-    // let mut paths = Vec::new();
+    if let Ok(pci_config) = PciConfigRegions::new(&tables) {
+        logln!("[info] ACPI: Found MCFG - Root bus is PCIe");
+    } else {
+        logln!("[info] ACPI: Could not find MCFG - Falling back to legacy PCI");
+    }
 
-    // aml.namespace
-    //     .traverse(|name, level| {
-    //         if level.typ == LevelType::Device {
-    //             paths.push(name.clone());
-    //         }
-    //         Ok(true)
-    //     })
-    //     .unwrap();
+    let mut paths = Vec::new();
 
-    // for path in paths {
-    //     let adr_path = AmlName::from_str("_ADR").unwrap().resolve(&path).unwrap();
-    //     let hid_path = AmlName::from_str("_HID").unwrap().resolve(&path).unwrap();
+    aml.namespace
+        .traverse(|name, level| {
+            if level.typ == LevelType::Device {
+                paths.push(name.clone());
+            }
+            Ok(true)
+        })
+        .unwrap();
 
-    //     if let Ok(adr) = aml.invoke_method(&adr_path, aml::value::Args::EMPTY) {
-    //         logln!("{}: {:016x}", path, adr.as_integer(&mut aml).unwrap());
-    //     } else if let Ok(hid) = aml.invoke_method(&hid_path, aml::value::Args::EMPTY) {
-    //         logln!("{}: {:?}", path, hid);
-    //     } else {
-    //         logln!("{}", path);
-    //     }
-    // }
+    for path in paths {
+        let adr_path = AmlName::from_str("_ADR").unwrap().resolve(&path).unwrap();
+        let hid_path = AmlName::from_str("_HID").unwrap().resolve(&path).unwrap();
 
-    // let root_prt = aml
-    //     .invoke_method(
-    //         &AmlName::from_str("\\_SB.PCI0._PRT").unwrap(),
-    //         aml::value::Args::EMPTY,
-    //     )
-    //     .unwrap();
+        logln!("{}:", path);
 
-    // if let AmlValue::Package(entries) = root_prt {
-    //     for entry in entries {
-    //         if let AmlValue::Package(elements) = entry {
-    //             let pci_address = match &elements[0] {
-    //                 AmlValue::Integer(v) => v,
-    //                 _ => unimplemented!(),
-    //             };
-    //             let int_pin = match &elements[1] {
-    //                 AmlValue::Integer(v) => v,
-    //                 _ => unimplemented!(),
-    //             };
-    //             let source = &elements[2];
-    //             let gsi = match &elements[3] {
-    //                 AmlValue::Integer(v) => v,
-    //                 _ => unimplemented!(),
-    //             };
+        if let Ok(adr) = aml.invoke_method(&adr_path, aml::value::Args::EMPTY) {
+            logln!("   ADR {:016x}", adr.as_integer(&mut aml).unwrap());
+        }
+        if let Ok(hid) = aml.invoke_method(&hid_path, aml::value::Args::EMPTY) {
+            match hid {
+                aml::AmlValue::Integer(int_val) => {
+                    if let Some(acpi_device) = acpi_device_from_hid(int_val) {
+                        logln!("   Device: {:?}", acpi_device);
+                        logln!("   HID {:016x}", int_val);
 
-    //             logln!("PCI address: {:016x}", pci_address);
-    //             logln!("Interrupt pin: {:016x}", int_pin);
-    //             logln!("Source: {:?}", source);
-    //             logln!("GSI: {:016x}", gsi);
-    //             logln!("----------------------------------------")
-    //         }
-    //     }
-    // }
+                        let status_path =
+                            AmlName::from_str("_STA").unwrap().resolve(&path).unwrap();
+
+                        if acpi_device == AcpiDevice::PS2Keyboard
+                            || acpi_device == AcpiDevice::PS2Mouse
+                        {
+                            let status = aml
+                                .namespace
+                                .get_by_path(&status_path)
+                                .unwrap()
+                                .as_status()
+                                .unwrap();
+
+                            if status.present && status.enabled {
+                                let crs_path =
+                                    AmlName::from_str("_CRS").unwrap().resolve(&path).unwrap();
+
+                                let value = aml
+                                    .invoke_method(&crs_path, aml::value::Args::EMPTY)
+                                    .unwrap();
+
+                                let crs = aml::resource::resource_descriptor_list(&value).unwrap();
+
+                                for resource in crs {
+                                    match resource {
+                                        aml::resource::Resource::Irq(irq) => {
+                                            let irq_mask = irq.irq;
+
+                                            if irq_mask.count_ones() == 1 {
+                                                let irq_num = irq_mask.trailing_zeros();
+
+                                                if crate::interrupts::io_apic::IO_APIC
+                                                    .is_redirect_set(irq_num)
+                                                {
+                                                    panic!(
+                                                        "ACPI: IO APIC already has redirect entry set for GSI {}",
+                                                        irq_num
+                                                    );
+                                                }
+
+                                                // logln!("   Real IRQ: {}", irq_num);
+                                                // logln!("   Descriptor: {:?}", irq);
+
+                                                let trigger = match irq.trigger {
+                                                    aml::resource::InterruptTrigger::Edge => {
+                                                        TriggerMode::Edge
+                                                    }
+                                                    aml::resource::InterruptTrigger::Level => {
+                                                        TriggerMode::Level
+                                                    }
+                                                };
+
+                                                let polarity = match irq.polarity {
+                                                    aml::resource::InterruptPolarity::ActiveHigh => PinPolarity::ActiveHigh,
+                                                    aml::resource::InterruptPolarity::ActiveLow => PinPolarity::ActiveLow,
+                                                };
+
+                                                crate::interrupts::io_apic::IO_APIC.set_redirect(
+                                                    irq_num,
+                                                    0x30 + (irq_num as u8),
+                                                    DeliveryMode::Fixed,
+                                                    trigger,
+                                                    polarity,
+                                                    false,
+                                                    Destination::Physical(0),
+                                                );
+                                            } else {
+                                                // Multiple IRQs are possible
+                                                unimplemented!();
+                                            }
+                                        }
+                                        _ => {
+                                            // logln!("{:#?}", resource);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        logln!("   HID {:016x}", int_val);
+                    }
+                }
+                aml::AmlValue::String(s_val) => {
+                    logln!("   HID {}", s_val);
+                }
+                _ => unimplemented!(),
+            }
+        }
+    }
+
+    let root_prt = aml
+        .invoke_method(
+            &AmlName::from_str("\\_SB.PCI0._PRT").unwrap(),
+            aml::value::Args::EMPTY,
+        )
+        .unwrap();
+
+    if let AmlValue::Package(entries) = root_prt {
+        for entry in entries {
+            if let AmlValue::Package(elements) = entry {
+                let pci_address = match &elements[0] {
+                    AmlValue::Integer(v) => v,
+                    _ => unimplemented!(),
+                };
+                let int_pin = match &elements[1] {
+                    AmlValue::Integer(v) => v,
+                    _ => unimplemented!(),
+                };
+                let source = &elements[2];
+                let gsi = match &elements[3] {
+                    AmlValue::Integer(v) => v,
+                    _ => unimplemented!(),
+                };
+
+                logln!("PCI address: {:016x}", pci_address);
+                logln!("Interrupt pin: {:016x}", int_pin);
+                logln!("Source: {:?}", source);
+                logln!("GSI: {:016x}", gsi);
+                logln!("----------------------------------------")
+            }
+        }
+    }
 
     // if let Ok((name, handle)) = aml.namespace.search(
     //     &AmlName::from_str("_CRS").unwrap(),
@@ -172,192 +271,14 @@ pub fn init_acpi(boot_info: &BootInfo) {
     //     logln!("{}: {:X?}", name, crs);
     // }
 
-    // let linka_crs = aml
-    //     .invoke_method(
-    //         &AmlName::from_str("\\_SB.LNKA._CRS").unwrap(),
-    //         aml::value::Args::EMPTY,
-    //     )
-    //     .unwrap();
+    let linka_crs = aml
+        .invoke_method(
+            &AmlName::from_str("\\_SB.LNKA._CRS").unwrap(),
+            aml::value::Args::EMPTY,
+        )
+        .unwrap();
 
-    // let resources = resource_descriptor_list(&linka_crs).unwrap();
+    let resources = aml::resource::resource_descriptor_list(&linka_crs).unwrap();
 
-    // logln!("{:#?}", resources);
-}
-
-struct KernelAmlHandler;
-
-impl Handler for KernelAmlHandler {
-    fn read_u8(&self, address: usize) -> u8 {
-        read_memory(address)
-    }
-
-    fn read_u16(&self, address: usize) -> u16 {
-        read_memory(address)
-    }
-
-    fn read_u32(&self, address: usize) -> u32 {
-        read_memory(address)
-    }
-
-    fn read_u64(&self, address: usize) -> u64 {
-        read_memory(address)
-    }
-
-    fn write_u8(&mut self, address: usize, value: u8) {
-        unimplemented!()
-    }
-
-    fn write_u16(&mut self, address: usize, value: u16) {
-        unimplemented!()
-    }
-
-    fn write_u32(&mut self, address: usize, value: u32) {
-        unimplemented!()
-    }
-
-    fn write_u64(&mut self, address: usize, value: u64) {
-        unimplemented!()
-    }
-
-    fn read_io_u8(&self, port: u16) -> u8 {
-        unsafe { read_io_port_u8(port) }
-    }
-
-    fn read_io_u16(&self, port: u16) -> u16 {
-        unsafe { read_io_port_u16(port) }
-    }
-
-    fn read_io_u32(&self, port: u16) -> u32 {
-        unsafe { read_io_port_u32(port) }
-    }
-
-    fn write_io_u8(&self, port: u16, value: u8) {
-        unsafe {
-            write_io_port_u8(port, value);
-        }
-    }
-
-    fn write_io_u16(&self, port: u16, value: u16) {
-        unsafe {
-            write_io_port_u16(port, value);
-        }
-    }
-
-    fn write_io_u32(&self, port: u16, value: u32) {
-        unsafe {
-            write_io_port_u32(port, value);
-        }
-    }
-
-    fn read_pci_u8(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u8 {
-        PCI_SUBSYSTEM.pci_config_read_u8(PCIAddress::function(bus, device, function), offset as u8)
-    }
-
-    fn read_pci_u16(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u16 {
-        PCI_SUBSYSTEM.pci_config_read_u16(PCIAddress::function(bus, device, function), offset as u8)
-    }
-
-    fn read_pci_u32(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u32 {
-        PCI_SUBSYSTEM.pci_config_read_u32(PCIAddress::function(bus, device, function), offset as u8)
-    }
-
-    fn write_pci_u8(
-        &self,
-        segment: u16,
-        bus: u8,
-        device: u8,
-        function: u8,
-        offset: u16,
-        value: u8,
-    ) {
-        unimplemented!()
-    }
-
-    fn write_pci_u16(
-        &self,
-        segment: u16,
-        bus: u8,
-        device: u8,
-        function: u8,
-        offset: u16,
-        value: u16,
-    ) {
-        unimplemented!()
-    }
-
-    fn write_pci_u32(
-        &self,
-        segment: u16,
-        bus: u8,
-        device: u8,
-        function: u8,
-        offset: u16,
-        value: u32,
-    ) {
-        unimplemented!()
-    }
-
-    fn sleep(&self, milliseconds: u64) {
-        unimplemented!()
-    }
-
-    fn stall(&self, microseconds: u64) {
-        unimplemented!()
-    }
-}
-
-fn read_memory<T>(address: usize) -> T
-where
-    T: Copy,
-{
-    unsafe {
-        let virt_addr = MEMORY_MAPPER
-            .phys_to_virt(PhysAddr::new(address as u64))
-            .unwrap();
-
-        virt_addr.as_ptr::<T>().read()
-    }
-}
-
-#[derive(Clone)]
-struct KernelAcpiHandler;
-
-impl AcpiHandler for KernelAcpiHandler {
-    unsafe fn map_physical_region<T>(
-        &self,
-        physical_address: usize,
-        size: usize,
-    ) -> ::acpi::PhysicalMapping<Self, T> {
-        let num_pages = size.div_ceil(4096);
-
-        unsafe {
-            let virt_addr = MEMORY_MAPPER
-                .map_virt_page(
-                    PhysAddr::new(physical_address as u64),
-                    PageTableFlags::PRESENT,
-                )
-                .unwrap();
-
-            if num_pages > 1 {
-                for page in 1..num_pages {
-                    MEMORY_MAPPER
-                        .map_virt_page(
-                            PhysAddr::new((physical_address + 4096 * page) as u64),
-                            PageTableFlags::PRESENT,
-                        )
-                        .unwrap();
-                }
-            }
-
-            PhysicalMapping::new(
-                physical_address,
-                NonNull::new_unchecked(virt_addr.as_u64() as *mut T),
-                size,
-                num_pages * 4096,
-                KernelAcpiHandler,
-            )
-        }
-    }
-
-    fn unmap_physical_region<T>(region: &::acpi::PhysicalMapping<Self, T>) {}
+    logln!("{:#?}", resources);
 }

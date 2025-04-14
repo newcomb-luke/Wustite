@@ -8,16 +8,34 @@ pub extern "x86-interrupt" fn ps2_keyboard_handler(_stack_frame: InterruptStackF
     crate::interrupts::acknowledge_interrupt();
 }
 
+pub extern "x86-interrupt" fn ps2_mouse_handler(_stack_frame: InterruptStackFrame) {
+    logln!("Mouse moved");
+
+    crate::interrupts::acknowledge_interrupt();
+}
+
 pub extern "x86-interrupt" fn spurious_interrupt_handler(stack_frame: InterruptStackFrame) {
-    panic!("SPURIOUS INTERRUPT\n{:#?}", stack_frame);
+    logln!("SPURIOUS INTERRUPT\n{:#?}", stack_frame);
+
+    kernel::hlt_loop();
 }
 
 pub extern "x86-interrupt" fn nmi_handler(stack_frame: InterruptStackFrame) {
-    panic!("NON-MASKABLE INTERRUPT\n{:#?}", stack_frame);
+    logln!("NON-MASKABLE INTERRUPT\n{:#?}", stack_frame);
+
+    kernel::hlt_loop();
 }
 
 pub extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     logln!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+    kernel::hlt_loop();
+}
+
+pub extern "x86-interrupt" fn general_protection_handler(stack_frame: InterruptStackFrame, error_code: u64) {
+    logln!("EXCEPTION: GENERAL PROTECTION");
+    logln!("Error code: {:?}", error_code);
+    logln!("{:#?}", stack_frame);
+    kernel::hlt_loop();
 }
 
 pub extern "x86-interrupt" fn double_fault_handler(

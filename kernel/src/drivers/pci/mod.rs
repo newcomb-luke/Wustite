@@ -273,15 +273,25 @@ impl Display for PCIGeneralDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_fmt(format_args!("{} {}: ", self.addr, self.device_class))?;
 
-        if let Some(device_name) =
-            get_device_name(self.common_header.device_id, self.common_header.vendor_id)
-        {
-            f.write_str(device_name)
-        } else {
-            f.write_fmt(format_args!(
+        let vendor_id = self.common_header.vendor_id;
+        let device_id = self.common_header.device_id;
+
+        match (
+            get_vendor_name(vendor_id),
+            get_device_name(device_id, vendor_id),
+        ) {
+            (Some(vendor), Some(device)) => f.write_fmt(format_args!("{} {}", vendor, device)),
+            (Some(vendor), None) => {
+                f.write_fmt(format_args!("{} Unknown ({:04x})", vendor, device_id))
+            }
+            (None, Some(device)) => {
+                // Not sure how this would happen, but what the heck, sure
+                f.write_fmt(format_args!("Unknown ({:04x}) {}", vendor_id, device))
+            }
+            (None, None) => f.write_fmt(format_args!(
                 "Unknown ({:04x}:{:04x})",
-                self.common_header.vendor_id, self.common_header.device_id
-            ))
+                vendor_id, device_id
+            )),
         }
     }
 }
@@ -707,21 +717,47 @@ impl PCICommonHeader {
     }
 }
 
+fn get_vendor_name(vendor_id: u16) -> Option<&'static str> {
+    Some(match vendor_id {
+        0x8086 => "Intel Corporation",
+        0x1B36 => "Red Hat, Inc.",
+        0x15AD => "VMWare",
+        0x1234 => "QEMU",
+        _ => {
+            return None;
+        }
+    })
+}
+
 fn get_device_name(device_id: u16, vendor_id: u16) -> Option<&'static str> {
     match vendor_id {
         // Intel
         0x8086 => match device_id {
-            0x7010 => Some("Intel PIIX3 IDE"),
+            0x100E => Some("82540EM Gigabit Ethernet Controller"),
+            0x10D3 => Some("82574L Gigabit Network Connection"),
+            0x1237 => Some("440FX - 82441FX PMC [Natoma]"),
+            0x2918 => Some("82801IB (ICH9) LPC Interface Controller"),
+            0x2922 => Some("82801IR/IO/IH (ICH9R/DO/DH) 6 port SATA Controller [AHCI mode]"),
+            0x2930 => Some("82801I (ICH9 Family) SMBus Controller"),
+            0x29C0 => Some("82G33/G31/P35/P31 Express DRAM Controller"),
+            0x7000 => Some("82371SB PIIX3 ISA [Natoma/Triton II]"),
+            0x7010 => Some("82371SB PIIX3 IDE [Natoma/Triton II]"),
+            0x7113 => Some("82371AB/EB/MB PIIX4 ACPI"),
             _ => None,
         },
         // Red Hat, Inc.
         0x1B36 => match device_id {
-            0x0010 => Some("Red Hat QEMU NVM Express"),
+            0x0010 => Some("QEMU NVM Express"),
             _ => None,
         },
         // VMWare
         0x15AD => match device_id {
-            0x0405 => Some("VMWare SVGA-II"),
+            0x0405 => Some("SVGA-II"),
+            _ => None,
+        },
+        // QEMU
+        0x1234 => match device_id {
+            0x1111 => Some("Standard VGA"),
             _ => None,
         },
         _ => None,

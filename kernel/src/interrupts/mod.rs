@@ -1,9 +1,9 @@
 use handlers::{
-    breakpoint_handler, double_fault_handler, nmi_handler, page_fault_handler,
-    ps2_keyboard_handler, spurious_interrupt_handler,
+    breakpoint_handler, double_fault_handler, general_protection_handler, nmi_handler, page_fault_handler, ps2_keyboard_handler, ps2_mouse_handler, spurious_interrupt_handler
 };
 use lazy_static::lazy_static;
 use x86_64::structures::idt::InterruptDescriptorTable;
+use core::arch::asm;
 
 mod handlers;
 pub mod io_apic;
@@ -12,10 +12,13 @@ pub mod local_apic;
 
 pub use local_apic::acknowledge_interrupt;
 
+use crate::{log, logln};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum InterruptIndex {
     Ps2Keyboard = 0x31,
+    Ps2Mouse = 0x3C,
     SpuriousInterrupt = 0xFF,
 }
 
@@ -36,10 +39,19 @@ lazy_static! {
         }
         idt.non_maskable_interrupt.set_handler_fn(nmi_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
+        idt.general_protection_fault.set_handler_fn(general_protection_handler);
+        idt[0x30].set_handler_fn(debug_handler);
         idt[InterruptIndex::Ps2Keyboard.as_u8()].set_handler_fn(ps2_keyboard_handler);
+        idt[InterruptIndex::Ps2Mouse.as_u8()].set_handler_fn(ps2_mouse_handler);
         idt[InterruptIndex::SpuriousInterrupt.as_u8()].set_handler_fn(spurious_interrupt_handler);
         idt
     };
+}
+
+pub extern "x86-interrupt" fn debug_handler(_stack_frame: x86_64::structures::idt::InterruptStackFrame) {
+    // log!(".");
+
+    crate::interrupts::local_apic::acknowledge_interrupt();
 }
 
 pub fn init() {
