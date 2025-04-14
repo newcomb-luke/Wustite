@@ -1,8 +1,8 @@
 use core::fmt::Write;
-
 use spin::Mutex;
 
 use super::{read_io_port_u8, write_io_port_u8};
+use crate::logln;
 
 const COM1_PORT: u16 = 0x3F8;
 
@@ -23,6 +23,15 @@ pub static SERIAL0: Mutex<SerialPort> = Mutex::new(SerialPort::new(
     StopBits::One,
     Parity::None,
 ));
+
+pub fn initialize_serial() {
+    {
+        let mut serial = SERIAL0.lock();
+        serial.initialize();
+    }
+
+    logln!("[info] Serial initialized");
+}
 
 pub struct SerialPort {
     base_port: u16,

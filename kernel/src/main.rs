@@ -6,49 +6,45 @@ extern crate alloc;
 
 mod acpi;
 mod allocator;
-mod arch;
 mod drivers;
 mod entry;
 mod gdt;
 mod interrupts;
 mod memory;
-mod std;
 
+use acpi::init_acpi;
 use common::BootInfo;
 use drivers::{
-    ide::IDEDriver, keyboard::KEYBOARD_BUFFER, nvme::NVMEDriver, pci::PCIDeviceClass,
-    serial::SERIAL0,
+    keyboard::KEYBOARD_BUFFER,
+    nvme::NVMEDriver,
+    pci::PCIDeviceClass,
+    serial::{SERIAL0, initialize_serial},
 };
-use memory::MEMORY_MAPPER;
-use x86_64::{
-    PhysAddr, VirtAddr,
-    structures::paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
-};
+use memory::initialize_memory;
 
-use crate::drivers::{
-    pci::{PCI_SUBSYSTEM, PCIDevice},
-    video::svga::vmware_svga_2::VMWareSVGADriver,
-};
+use crate::drivers::pci::{PCI_SUBSYSTEM, PCIDevice};
 
-fn start_kernel() {
-    logln!("------------------------- Kernel loaded -------------------------");
+fn start_kernel(boot_info: &BootInfo) {
+    initialize_serial();
 
-    logln!("Wustite version {}", env!("CARGO_PKG_VERSION"));
+    logln!(
+        "[info] Hello from Wustite version {}!",
+        env!("CARGO_PKG_VERSION")
+    );
 
-    // let acpi_reader = ACPIReader::read(phys_mem_offset).expect("ACPI not found, cannot continue");
+    initialize_memory(boot_info);
+    init_acpi(boot_info);
 
-    // let available_drives = available_drives();
-
-    // println!("{:#?}", available_drives);
+    KEYBOARD_BUFFER.init();
 
     let pci_devices = PCI_SUBSYSTEM.enumerate_pci_devices();
 
-    // let mut vga_driver = None;
-    // let mut ide_driver = None;
     let mut nvme_driver = None;
 
     for device in pci_devices {
         logln!("{}", device);
+
+        continue;
 
         #[allow(irrefutable_let_patterns)]
         if let PCIDevice::General(device) = device {
@@ -84,42 +80,4 @@ fn start_kernel() {
     //     logln!("No SVGA-compatible graphics device found");
     //     logln!("Failed to initialize graphics");
     // }
-}
-
-fn initialize_kernel(boot_info: &BootInfo) {
-    {
-        let mut serial = SERIAL0.lock();
-        serial.initialize();
-    }
-
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
-    let mut mapper = unsafe { memory::init(phys_mem_offset) };
-
-    let memory_regions = unsafe {
-        core::slice::from_raw_parts(
-            boot_info.memory_regions_start,
-            boot_info.memory_regions_count as usize,
-        )
-    };
-
-    let mut frame_allocator = unsafe { memory::BootInfoFrameAllocator::init(memory_regions) };
-
-    allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("Kernel heap initialization failed");
-
-    MEMORY_MAPPER.init(mapper, frame_allocator);
-    KEYBOARD_BUFFER.init();
-}
-
-fn initialize_platform() {
-    crate::gdt::init();
-    crate::interrupts::init_idt();
-    unsafe { crate::interrupts::PICS.lock().initialize() };
-    x86_64::instructions::interrupts::enable();
-}
-
-pub fn hlt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
-    }
 }

@@ -1,5 +1,20 @@
 #![no_std]
 
+pub fn write_u64_le(value: u64, output: &mut [u8], offset: usize) {
+    let buffer = value.to_le_bytes();
+    (&mut output[offset..offset + 8]).copy_from_slice(&buffer);
+}
+
+pub fn write_u32_le(value: u32, output: &mut [u8], offset: usize) {
+    let buffer = value.to_le_bytes();
+    (&mut output[offset..offset + 4]).copy_from_slice(&buffer);
+}
+
+pub fn write_u16_le(value: u16, output: &mut [u8], offset: usize) {
+    let buffer = value.to_le_bytes();
+    (&mut output[offset..offset + 2]).copy_from_slice(&buffer);
+}
+
 pub fn read_u64_le(input: &[u8], offset: usize) -> u64 {
     let mut buffer: [u8; 8] = [0; 8];
     buffer.copy_from_slice(&input[offset..offset + 8]);

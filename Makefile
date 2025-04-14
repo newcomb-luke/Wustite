@@ -130,7 +130,8 @@ run: hard_disk firmware
 		-drive if=pflash,format=raw,readonly=on,file=$(BUILD_DIR)/OVMF_CODE.4m.fd \
 		-drive if=pflash,format=raw,file=$(BUILD_DIR)/OVMF_VARS.4m.fd \
 		-device nvme,drive=drive0,serial=deadbeef \
-		-drive format=raw,file=$(HARD_DISK_IMG),if=none,id=drive0
+		-drive format=raw,file=$(HARD_DISK_IMG),if=none,id=drive0 \
+		--trace "pci*" -D trace.log
 # -device vmware-svga
 # -device nvme,serial=S73WNJ0W624507R,drive=nvm
 

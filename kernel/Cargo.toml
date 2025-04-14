@@ -5,13 +5,15 @@ edition = "2024"
 
 [dependencies]
 common = { path = "../common" }
+bin-tools = { path = "../bin-tools" }
 volatile = "0.6"
 spin = "0.10"
 x86_64 = "0.15"
 raw-cpuid = "11.5"
-pic8259 = "0.11"
 pc-keyboard = "0.8"
 linked_list_allocator = "0.10"
+acpi = "5.2"
+aml = { git = "https://github.com/newcomb-luke/acpi", branch = "feat/write-field" }
 
 [dependencies.lazy_static]
 version = "1.5"

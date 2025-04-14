@@ -111,6 +111,26 @@ impl PCISubsystemInner {
         address
     }
 
+    // Offset is in *8 byte words!!!*
+    fn pci_config_read_u8(&mut self, addr: PCIAddress, offset: u8) -> u8 {
+        // Cut off the last 2 bits
+        let u32_offset = offset & 0xFC;
+        let address = self.get_pci_config_address(addr, u32_offset);
+
+        unsafe {
+            write_io_port_u32(CONFIG_ADDRESS, address.to_le());
+
+            let data = read_io_port_u32(CONFIG_DATA);
+
+            match offset & 0b11 {
+                0 => (data >> 24) as u8,
+                1 => ((data >> 16) & 0xFF) as u8,
+                2 => ((data >> 8) & 0xFF) as u8,
+                _ => (data & 0xFF) as u8,
+            }
+        }
+    }
+
     // Offset is in *16 byte words!!!*
     fn pci_config_read_u16(&mut self, addr: PCIAddress, offset: u8) -> u16 {
         // Cut off the last odd bit
@@ -202,6 +222,21 @@ impl PCISubsystem {
         let mut inner = self.inner.lock();
         let before = inner.pci_config_read_u16(device.addr(), COMMAND_REGISTER_OFFSET);
         inner.pci_config_write_u16(device.addr(), COMMAND_REGISTER_OFFSET, before | command);
+    }
+
+    pub fn pci_config_read_u8(&self, address: PCIAddress, offset: u8) -> u8 {
+        let mut inner = self.inner.lock();
+        inner.pci_config_read_u8(address, offset)
+    }
+
+    pub fn pci_config_read_u16(&self, address: PCIAddress, offset: u8) -> u16 {
+        let mut inner = self.inner.lock();
+        inner.pci_config_read_u16(address, offset)
+    }
+
+    pub fn pci_config_read_u32(&self, address: PCIAddress, offset: u8) -> u32 {
+        let mut inner = self.inner.lock();
+        inner.pci_config_read_u32(address, offset)
     }
 }
 

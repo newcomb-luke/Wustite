@@ -1,13 +1,17 @@
-use common::memory::MemoryRegion;
+use core::alloc::Layout;
+
+use common::{BootInfo, memory::MemoryRegion};
 use spin::Mutex;
 use x86_64::{
     PhysAddr, VirtAddr,
     registers::control::Cr3,
     structures::paging::{
-        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame,
-        Size4KiB, Translate,
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags,
+        PhysFrame, Size4KiB, Translate,
     },
 };
+
+use crate::{allocator::ALLOCATOR, logln};
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {
@@ -49,7 +53,30 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
     }
 }
 
-pub static mut PHYS_MEM_OFFSET: u64 = 0;
+static mut PHYS_MEM_OFFSET: u64 = 0;
+
+pub fn initialize_memory(boot_info: &BootInfo) {
+    logln!("[info] Starting memory initialization");
+
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let mut mapper = unsafe { init(phys_mem_offset) };
+
+    let memory_regions = unsafe {
+        core::slice::from_raw_parts(
+            boot_info.memory_regions_start,
+            boot_info.memory_regions_count as usize,
+        )
+    };
+
+    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(memory_regions) };
+
+    crate::allocator::init_heap(&mut mapper, &mut frame_allocator)
+        .expect("Kernel heap initialization failed");
+
+    MEMORY_MAPPER.init(mapper, frame_allocator);
+
+    logln!("[info] Memory initialized");
+}
 
 /// Initialize a new OffsetPageTable.
 ///
@@ -57,7 +84,7 @@ pub static mut PHYS_MEM_OFFSET: u64 = 0;
 /// complete physical memory is mapped to virtual memory at the passed
 /// `physical_memory_offset`. Also, this function must be only called once
 /// to avoid aliasing `&mut` references (which is undefined behavior).
-pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
+unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
     unsafe {
         PHYS_MEM_OFFSET = physical_memory_offset.as_u64();
 
@@ -86,7 +113,10 @@ pub struct KernelMapper {
     inner: Mutex<Option<InnerKernelMapper>>,
 }
 
+const PURE_VIRTUAL_START: usize = 0x1000_0000_0000;
+
 struct InnerKernelMapper {
+    virtual_offset: usize,
     mapper: OffsetPageTable<'static>,
     frame_allocator: BootInfoFrameAllocator,
 }
@@ -123,21 +153,22 @@ impl KernelMapper {
         })
     }
 
-    pub unsafe fn map_page(
+    /// Maps a virtual page which has a mapping to the specified physical address
+    pub unsafe fn map_virt_page(
         &self,
-        address: VirtAddr,
+        address: PhysAddr,
         flags: PageTableFlags,
-    ) -> Result<PhysAddr, ()> {
+    ) -> Result<VirtAddr, ()> {
         x86_64::instructions::interrupts::without_interrupts(|| {
             if let Some(inner) = self.inner.lock().as_mut() {
-                let frame = inner.frame_allocator.allocate_frame().ok_or(())?;
+                let virt_address = VirtAddr::new(inner.next_virtual_page() as u64);
 
                 unsafe {
                     inner
                         .mapper
                         .map_to(
-                            Page::from_start_address(address).map_err(|_| ())?,
-                            frame,
+                            Page::<Size4KiB>::containing_address(virt_address),
+                            PhysFrame::containing_address(address),
                             flags,
                             &mut inner.frame_allocator,
                         )
@@ -145,7 +176,7 @@ impl KernelMapper {
                         .flush();
                 }
 
-                Ok(frame.start_address())
+                Ok(virt_address)
             } else {
                 Err(())
             }
@@ -161,14 +192,33 @@ impl KernelMapper {
             }
         })
     }
+
+    pub unsafe fn phys_to_virt(&self, address: PhysAddr) -> Result<VirtAddr, ()> {
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            if let Some(inner) = self.inner.lock().as_mut() {
+                Ok(inner.mapper.phys_offset() + address.as_u64())
+            } else {
+                Err(())
+            }
+        })
+    }
 }
 
 impl InnerKernelMapper {
     pub fn new(mapper: OffsetPageTable<'static>, frame_allocator: BootInfoFrameAllocator) -> Self {
         Self {
+            virtual_offset: PURE_VIRTUAL_START,
             mapper,
             frame_allocator,
         }
+    }
+
+    fn next_virtual_page(&mut self) -> usize {
+        let offset = self.virtual_offset;
+
+        self.virtual_offset += 4096;
+
+        offset
     }
 }
 

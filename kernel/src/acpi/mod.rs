@@ -1,489 +1,363 @@
-#![allow(dead_code)]
+use core::ptr::NonNull;
 
-use x86_64::VirtAddr;
+use acpi::{
+    AcpiHandler, AcpiTables, InterruptModel, PhysicalMapping, platform::interrupt::NmiProcessor,
+};
+use alloc::boxed::Box;
+use aml::{AmlContext, Handler};
+use common::BootInfo;
+use x86_64::{PhysAddr, structures::paging::PageTableFlags};
 
-const EBDA_START: usize = 0x00080000;
-const EBDA_END: usize = 0x0009FFFF;
+use crate::{
+    drivers::{
+        pci::{PCI_SUBSYSTEM, PCIAddress},
+        read_io_port_u8, read_io_port_u16, read_io_port_u32, write_io_port_u8, write_io_port_u16,
+        write_io_port_u32,
+    },
+    interrupts::{
+        io_apic::{DeliveryMode, Destination, PinPolarity, TriggerMode},
+        local_apic::LocalInterrupt,
+    },
+    logln,
+    memory::MEMORY_MAPPER,
+};
 
-const BIOS_BELOW_START: usize = 0x000E0000;
-const BIOS_BELOW_END: usize = 0x000FFFFF;
+pub fn init_acpi(boot_info: &BootInfo) {
+    logln!("[info] Initializaing ACPI");
 
-pub struct ACPIReader {
-    rsdp: ACPIRsdp,
-    rsdt: ACPIRsdt,
-    fadt: ACPIFadt,
-}
+    let tables = unsafe {
+        AcpiTables::from_rsdp(KernelAcpiHandler, boot_info.acpi_rsdp_address as usize).unwrap()
+    };
 
-impl ACPIReader {
-    pub fn read(physical_memory_offset: VirtAddr) -> Option<Self> {
-        let rsdp = ACPIRsdp::find(physical_memory_offset)?;
+    let dsdt_table = tables.dsdt().unwrap();
 
-        if rsdp.revision() != 0 {
-            return None;
-        }
+    let mut aml = AmlContext::new(Box::new(KernelAmlHandler), aml::DebugVerbosity::All);
 
-        let rsdt = ACPIRsdt::parse(physical_memory_offset, rsdp.rsdt_address)?;
+    let dsdt_address = unsafe {
+        MEMORY_MAPPER
+            .phys_to_virt(PhysAddr::new(dsdt_table.address as u64))
+            .unwrap()
+    };
 
-        let fadt_addr = rsdt.find_table(physical_memory_offset, ACPISDT::Fadt)?;
-        let fadt = ACPIFadt::parse(physical_memory_offset, fadt_addr)?;
+    let dsdt_table_slice =
+        unsafe { core::slice::from_raw_parts(dsdt_address.as_ptr(), dsdt_table.length as usize) };
 
-        Some(Self { rsdp, rsdt, fadt })
-    }
-}
+    aml.parse_table(dsdt_table_slice).unwrap();
+    aml.initialize_objects().unwrap();
 
-#[derive(Clone, Copy)]
-enum ACPISDT {
-    Fadt,
-}
+    logln!("[info] ACPI initialized");
 
-impl ACPISDT {
-    fn signature(&self) -> &'static str {
-        match self {
-            Self::Fadt => "FACP",
-        }
-    }
-}
-
-/// Root system description pointer
-struct ACPIRsdp {
-    checksum: u8,
-    oem_id: [u8; 6],
-    revision: u8,
-    rsdt_address: u32,
-}
-
-impl ACPIRsdp {
-    pub fn find(physical_memory_offset: VirtAddr) -> Option<Self> {
+    if let InterruptModel::Apic(interrupt_model) = tables.platform_info().unwrap().interrupt_model {
+        // We know that this is safe because we get the local apic address straight from the ACPI tables
         unsafe {
-            let ptr_offset: *const u8 = physical_memory_offset.as_ptr();
-
-            let rsdp_ptr = Self::search_for_self(
-                ptr_offset.add(BIOS_BELOW_START),
-                ptr_offset.add(BIOS_BELOW_END),
-            )
-            .or_else(|| {
-                Self::search_for_self(ptr_offset.add(EBDA_START), ptr_offset.add(EBDA_END))
-            })?;
-
-            let mut buffer: [u8; 20] = [0; 20];
-            rsdp_ptr.copy_to(buffer.as_mut_ptr(), 20);
-
-            if !validate_checksum(&buffer) {
-                return None;
-            }
-
-            let checksum = buffer[8];
-
-            let mut oem_id: [u8; 6] = [0; 6];
-            oem_id.copy_from_slice(&buffer[9..15]);
-
-            let revision = buffer[15];
-
-            let rsdt_address = u32_from_slice(&buffer[16..]);
-
-            Some(Self {
-                checksum,
-                oem_id,
-                revision,
-                rsdt_address,
-            })
-        }
-    }
-
-    pub fn oem_id(&self) -> &str {
-        core::str::from_utf8(&self.oem_id).unwrap()
-    }
-
-    pub fn revision(&self) -> u8 {
-        self.revision
-    }
-
-    pub fn rsdt_address(&self) -> u32 {
-        self.rsdt_address
-    }
-
-    fn search_for_self(start: *const u8, end: *const u8) -> Option<*const u8> {
-        const RSDP_SIGNATURE: &str = "RSD PTR ";
-
-        let mut buffer: [u8; 8] = [0; 8];
-
-        // It will always be on a 16-byte boundary
-        let mut addr = start;
-
-        while addr < end {
-            unsafe {
-                addr.copy_to(buffer.as_mut_ptr(), 8);
-            }
-
-            if RSDP_SIGNATURE.as_bytes() == buffer {
-                return Some(addr as *const u8);
-            }
-
-            addr = unsafe { addr.add(16) };
+            crate::interrupts::local_apic::initialize_local_apic(
+                interrupt_model.local_apic_address,
+            );
         }
 
-        None
-    }
-}
+        // The ACPI tables can contain information about sources of NMIs (Non-Maskable Interrupts)
+        // We must configure the LAPIC to use that source
+        for nmi_config in interrupt_model.local_apic_nmi_lines.iter() {
+            // Our boot processor
+            if nmi_config.processor == NmiProcessor::All
+                || nmi_config.processor == NmiProcessor::ProcessorUid(0)
+            {
+                // Map to our type
+                let local_interrupt = match nmi_config.line {
+                    acpi::platform::interrupt::LocalInterruptLine::Lint0 => LocalInterrupt::LInt0,
+                    acpi::platform::interrupt::LocalInterruptLine::Lint1 => LocalInterrupt::LInt1,
+                };
 
-/// Generic ACPI system description table header
-struct ACPISDTHeader {
-    signature: [u8; 4],
-    length: u32,
-    revision: u8,
-    checksum: u8,
-    oem_id: [u8; 6],
-    oem_table_id: [u8; 8],
-    oem_revision: u32,
-    creator_id: u32,
-    creator_revision: u32,
-}
-
-impl ACPISDTHeader {
-    const SIZE_IN_MEMORY: usize = 36;
-
-    fn parse(ptr: *const u8) -> Self {
-        unsafe {
-            let mut buffer: [u8; Self::SIZE_IN_MEMORY] = [0; Self::SIZE_IN_MEMORY];
-            ptr.copy_to(buffer.as_mut_ptr(), Self::SIZE_IN_MEMORY);
-
-            let mut signature: [u8; 4] = [0; 4];
-            signature.copy_from_slice(&buffer[0..4]);
-
-            let length = u32_from_slice(&buffer[4..8]);
-            let revision = buffer[8];
-            let checksum = buffer[9];
-
-            let mut oem_id: [u8; 6] = [0; 6];
-            oem_id.copy_from_slice(&buffer[10..16]);
-
-            let mut oem_table_id: [u8; 8] = [0; 8];
-            oem_table_id.copy_from_slice(&buffer[16..24]);
-
-            let oem_revision = u32_from_slice(&buffer[24..28]);
-            let creator_id = u32_from_slice(&buffer[28..32]);
-            let creator_revision = u32_from_slice(&buffer[32..]);
-
-            Self {
-                signature,
-                length,
-                revision,
-                checksum,
-                oem_id,
-                oem_table_id,
-                oem_revision,
-                creator_id,
-                creator_revision,
-            }
-        }
-    }
-
-    pub fn signature(&self) -> &str {
-        core::str::from_utf8(&self.signature).unwrap()
-    }
-}
-
-/// Root system description table
-struct ACPIRsdt {
-    rsdt_address: u32,
-    header: ACPISDTHeader,
-}
-
-impl ACPIRsdt {
-    fn parse(physical_memory_offset: VirtAddr, address: u32) -> Option<Self> {
-        const RSDT_SIGNATURE: &str = "RSDT";
-
-        let ptr_offset: *const u8 = physical_memory_offset.as_ptr();
-        let rsdt_ptr = unsafe { ptr_offset.add(address as usize) };
-
-        let header = ACPISDTHeader::parse(rsdt_ptr);
-
-        if RSDT_SIGNATURE != header.signature()
-            || !validate_checksum_ptr(rsdt_ptr, header.length as usize)
-        {
-            return None;
-        }
-
-        Some(Self {
-            rsdt_address: address,
-            header,
-        })
-    }
-
-    fn find_table(&self, physical_memory_offset: VirtAddr, table: ACPISDT) -> Option<u32> {
-        let ptr_offset: *const u8 = physical_memory_offset.as_ptr();
-        let rsdt_ptr = unsafe { ptr_offset.add(self.rsdt_address as usize) };
-        let num_sdt_pointers = (self.header.length as usize - ACPISDTHeader::SIZE_IN_MEMORY) / 4;
-
-        unsafe {
-            let first_sdt_pointer = rsdt_ptr.add(ACPISDTHeader::SIZE_IN_MEMORY);
-
-            for i in 0..num_sdt_pointers {
-                let sdt_pointer = first_sdt_pointer.add(i * 4);
-
-                let mut buffer: [u8; 4] = [0; 4];
-                sdt_pointer.copy_to(buffer.as_mut_ptr(), 4);
-                let address_of_table = u32::from_ne_bytes(buffer);
-                // Reuse the buffer
-                let ptr_to_table = ptr_offset.add(address_of_table as usize);
-                ptr_to_table.copy_to(buffer.as_mut_ptr(), 4);
-
-                if buffer == table.signature().as_bytes() {
-                    return Some(address_of_table);
+                // Here in the execution path, the local ACPI must have already been initialized
+                unsafe {
+                    crate::interrupts::local_apic::configure_nmi(local_interrupt);
                 }
             }
         }
 
-        None
-    }
-}
+        // Get the information about almost definitely the only IOAPIC in the system
+        let io_apic = interrupt_model.io_apics.get(0).unwrap();
 
-#[derive(Debug, Clone, Copy)]
-pub enum PreferredPowerManagementProfile {
-    Unspecified,
-    Desktop,
-    Mobile,
-    Workstation,
-    EnterpriseServer,
-    SOHOServer,
-    AppliancePC,
-    PerformanceServer,
-    Tablet,
-    Unknown,
-}
+        crate::interrupts::io_apic::IO_APIC.init(
+            io_apic.address as u64,
+            io_apic.id,
+            io_apic.global_system_interrupt_base,
+        );
 
-impl From<u8> for PreferredPowerManagementProfile {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Self::Unspecified,
-            1 => Self::Desktop,
-            2 => Self::Mobile,
-            3 => Self::Workstation,
-            4 => Self::EnterpriseServer,
-            5 => Self::SOHOServer,
-            6 => Self::AppliancePC,
-            7 => Self::PerformanceServer,
-            8 => Self::Tablet,
-            _ => Self::Unknown,
+        // Explicit hard-coded interrupt source overrides for the IO APIC
+        // Other device-specific ones can be found elsewhere in the ACPI tables
+        for source_override in interrupt_model.interrupt_source_overrides.iter() {
+            let trigger_mode = match source_override.trigger_mode {
+                acpi::platform::interrupt::TriggerMode::SameAsBus => TriggerMode::Edge,
+                acpi::platform::interrupt::TriggerMode::Edge => TriggerMode::Edge,
+                acpi::platform::interrupt::TriggerMode::Level => TriggerMode::Level,
+            };
+
+            crate::interrupts::io_apic::IO_APIC.set_redirect(
+                source_override.global_system_interrupt,
+                0x30 + source_override.isa_source,
+                DeliveryMode::Fixed,
+                trigger_mode,
+                PinPolarity::ActiveHigh,
+                false,
+                Destination::Physical(0),
+            );
         }
     }
+
+    // let mut paths = Vec::new();
+
+    // aml.namespace
+    //     .traverse(|name, level| {
+    //         if level.typ == LevelType::Device {
+    //             paths.push(name.clone());
+    //         }
+    //         Ok(true)
+    //     })
+    //     .unwrap();
+
+    // for path in paths {
+    //     let adr_path = AmlName::from_str("_ADR").unwrap().resolve(&path).unwrap();
+    //     let hid_path = AmlName::from_str("_HID").unwrap().resolve(&path).unwrap();
+
+    //     if let Ok(adr) = aml.invoke_method(&adr_path, aml::value::Args::EMPTY) {
+    //         logln!("{}: {:016x}", path, adr.as_integer(&mut aml).unwrap());
+    //     } else if let Ok(hid) = aml.invoke_method(&hid_path, aml::value::Args::EMPTY) {
+    //         logln!("{}: {:?}", path, hid);
+    //     } else {
+    //         logln!("{}", path);
+    //     }
+    // }
+
+    // let root_prt = aml
+    //     .invoke_method(
+    //         &AmlName::from_str("\\_SB.PCI0._PRT").unwrap(),
+    //         aml::value::Args::EMPTY,
+    //     )
+    //     .unwrap();
+
+    // if let AmlValue::Package(entries) = root_prt {
+    //     for entry in entries {
+    //         if let AmlValue::Package(elements) = entry {
+    //             let pci_address = match &elements[0] {
+    //                 AmlValue::Integer(v) => v,
+    //                 _ => unimplemented!(),
+    //             };
+    //             let int_pin = match &elements[1] {
+    //                 AmlValue::Integer(v) => v,
+    //                 _ => unimplemented!(),
+    //             };
+    //             let source = &elements[2];
+    //             let gsi = match &elements[3] {
+    //                 AmlValue::Integer(v) => v,
+    //                 _ => unimplemented!(),
+    //             };
+
+    //             logln!("PCI address: {:016x}", pci_address);
+    //             logln!("Interrupt pin: {:016x}", int_pin);
+    //             logln!("Source: {:?}", source);
+    //             logln!("GSI: {:016x}", gsi);
+    //             logln!("----------------------------------------")
+    //         }
+    //     }
+    // }
+
+    // if let Ok((name, handle)) = aml.namespace.search(
+    //     &AmlName::from_str("_CRS").unwrap(),
+    //     &AmlName::from_str("\\_SB.LNKA").unwrap(),
+    // ) {
+    //     let value = aml.namespace.get(handle).unwrap();
+    //     logln!("{:?}", value);
+    //     let crs = aml::resource::resource_descriptor_list(&value);
+    //     logln!("{}: {:X?}", name, crs);
+    // }
+
+    // let linka_crs = aml
+    //     .invoke_method(
+    //         &AmlName::from_str("\\_SB.LNKA._CRS").unwrap(),
+    //         aml::value::Args::EMPTY,
+    //     )
+    //     .unwrap();
+
+    // let resources = resource_descriptor_list(&linka_crs).unwrap();
+
+    // logln!("{:#?}", resources);
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum ACPIAddressSpace {
-    SystemMemory,
-    SystemIO,
-    PCIConfigurationSpace,
-    EmbeddedController,
-    SystemManagementBus,
-    SystemCMOS,
-    PCIDeviceBARTarget,
-    IntelligentPlatformManagementInfrastructure,
-    GeneralPurposeIO,
-    GenericSerialBus,
-    PlatformCommunicationChannel,
-    Unknown,
-}
+struct KernelAmlHandler;
 
-impl From<u8> for ACPIAddressSpace {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Self::SystemMemory,
-            1 => Self::SystemIO,
-            2 => Self::PCIConfigurationSpace,
-            3 => Self::EmbeddedController,
-            4 => Self::SystemManagementBus,
-            5 => Self::SystemCMOS,
-            6 => Self::PCIDeviceBARTarget,
-            7 => Self::IntelligentPlatformManagementInfrastructure,
-            8 => Self::GeneralPurposeIO,
-            9 => Self::GenericSerialBus,
-            10 => Self::PlatformCommunicationChannel,
-            _ => Self::Unknown,
+impl Handler for KernelAmlHandler {
+    fn read_u8(&self, address: usize) -> u8 {
+        read_memory(address)
+    }
+
+    fn read_u16(&self, address: usize) -> u16 {
+        read_memory(address)
+    }
+
+    fn read_u32(&self, address: usize) -> u32 {
+        read_memory(address)
+    }
+
+    fn read_u64(&self, address: usize) -> u64 {
+        read_memory(address)
+    }
+
+    fn write_u8(&mut self, address: usize, value: u8) {
+        unimplemented!()
+    }
+
+    fn write_u16(&mut self, address: usize, value: u16) {
+        unimplemented!()
+    }
+
+    fn write_u32(&mut self, address: usize, value: u32) {
+        unimplemented!()
+    }
+
+    fn write_u64(&mut self, address: usize, value: u64) {
+        unimplemented!()
+    }
+
+    fn read_io_u8(&self, port: u16) -> u8 {
+        unsafe { read_io_port_u8(port) }
+    }
+
+    fn read_io_u16(&self, port: u16) -> u16 {
+        unsafe { read_io_port_u16(port) }
+    }
+
+    fn read_io_u32(&self, port: u16) -> u32 {
+        unsafe { read_io_port_u32(port) }
+    }
+
+    fn write_io_u8(&self, port: u16, value: u8) {
+        unsafe {
+            write_io_port_u8(port, value);
         }
+    }
+
+    fn write_io_u16(&self, port: u16, value: u16) {
+        unsafe {
+            write_io_port_u16(port, value);
+        }
+    }
+
+    fn write_io_u32(&self, port: u16, value: u32) {
+        unsafe {
+            write_io_port_u32(port, value);
+        }
+    }
+
+    fn read_pci_u8(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u8 {
+        PCI_SUBSYSTEM.pci_config_read_u8(PCIAddress::function(bus, device, function), offset as u8)
+    }
+
+    fn read_pci_u16(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u16 {
+        PCI_SUBSYSTEM.pci_config_read_u16(PCIAddress::function(bus, device, function), offset as u8)
+    }
+
+    fn read_pci_u32(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u32 {
+        PCI_SUBSYSTEM.pci_config_read_u32(PCIAddress::function(bus, device, function), offset as u8)
+    }
+
+    fn write_pci_u8(
+        &self,
+        segment: u16,
+        bus: u8,
+        device: u8,
+        function: u8,
+        offset: u16,
+        value: u8,
+    ) {
+        unimplemented!()
+    }
+
+    fn write_pci_u16(
+        &self,
+        segment: u16,
+        bus: u8,
+        device: u8,
+        function: u8,
+        offset: u16,
+        value: u16,
+    ) {
+        unimplemented!()
+    }
+
+    fn write_pci_u32(
+        &self,
+        segment: u16,
+        bus: u8,
+        device: u8,
+        function: u8,
+        offset: u16,
+        value: u32,
+    ) {
+        unimplemented!()
+    }
+
+    fn sleep(&self, milliseconds: u64) {
+        unimplemented!()
+    }
+
+    fn stall(&self, microseconds: u64) {
+        unimplemented!()
     }
 }
 
-struct GenericAddressStructure {
-    address_space: ACPIAddressSpace,
-    bit_width: u8,
-    bit_offset: u8,
-    access_size: u8,
-    address: u64,
+fn read_memory<T>(address: usize) -> T
+where
+    T: Copy,
+{
+    unsafe {
+        let virt_addr = MEMORY_MAPPER
+            .phys_to_virt(PhysAddr::new(address as u64))
+            .unwrap();
+
+        virt_addr.as_ptr::<T>().read()
+    }
 }
 
-/// Fixed ACPI description table
-struct ACPIFadt {
-    header: ACPISDTHeader,
-    firmware_control: u32,
-    dsdt_address: u32,
-    int_model: u8,
-    preferred_power_management_profile: PreferredPowerManagementProfile,
-    sci_interrupt: u16,
-    smi_command_port: u32,
-    acpi_enable: u8,
-    acpi_disable: u8,
-    s4bios_req: u8,
-    pstate_control: u8,
-    pm1a_event_block: u32,
-    pm1b_event_block: u32,
-    pm1a_control_block: u32,
-    pm1b_control_block: u32,
-    pm2_control_block: u32,
-    pm_timer_block: u32,
-    gpe0_block: u32,
-    gpe1_block: u32,
-    pm1_event_length: u8,
-    pm1_control_length: u8,
-    pm2_control_length: u8,
-    pm_timer_length: u8,
-    gpe0_length: u8,
-    gpe1_length: u8,
-    gpe1_base: u8,
-    c_state_control: u8,
-    worst_c2_latency: u16,
-    worst_c3_latency: u16,
-    flush_size: u16,
-    flush_stride: u16,
-    duty_offset: u8,
-    duty_width: u8,
-    day_alarm: u8,
-    month_alarm: u8,
-    century: u8,
-    boot_architecture_flags: u16,
-    _reserved2: u8,
-    flags: u32,
-}
+#[derive(Clone)]
+struct KernelAcpiHandler;
 
-impl ACPIFadt {
-    fn parse(physical_memory_offset: VirtAddr, address: u32) -> Option<Self> {
-        const FADT_SIGNATURE: &str = "FACP";
-
-        let ptr_offset: *const u8 = physical_memory_offset.as_ptr();
-        let fadt_ptr = unsafe { ptr_offset.add(address as usize) };
-
-        let header = ACPISDTHeader::parse(fadt_ptr);
+impl AcpiHandler for KernelAcpiHandler {
+    unsafe fn map_physical_region<T>(
+        &self,
+        physical_address: usize,
+        size: usize,
+    ) -> ::acpi::PhysicalMapping<Self, T> {
+        let num_pages = size.div_ceil(4096);
 
         unsafe {
-            if FADT_SIGNATURE != header.signature()
-                || !validate_checksum_ptr(fadt_ptr, header.length as usize)
-            {
-                return None;
+            let virt_addr = MEMORY_MAPPER
+                .map_virt_page(
+                    PhysAddr::new(physical_address as u64),
+                    PageTableFlags::PRESENT,
+                )
+                .unwrap();
+
+            if num_pages > 1 {
+                for page in 1..num_pages {
+                    MEMORY_MAPPER
+                        .map_virt_page(
+                            PhysAddr::new((physical_address + 4096 * page) as u64),
+                            PageTableFlags::PRESENT,
+                        )
+                        .unwrap();
+                }
             }
 
-            let data_ptr = fadt_ptr.add(ACPISDTHeader::SIZE_IN_MEMORY);
-            let mut buffer: [u8; 116] = [0; 116];
-            data_ptr.copy_to(buffer.as_mut_ptr(), 116);
-
-            let firmware_control = u32_from_slice(&buffer[0..4]);
-            let dsdt_address = u32_from_slice(&buffer[4..8]);
-            let int_model = buffer[8];
-            let preferred_power_management_profile = buffer[9].into();
-            let sci_interrupt = u16_from_slice(&buffer[10..12]);
-            let smi_command_port = u32_from_slice(&buffer[12..16]);
-            let acpi_enable = buffer[16];
-            let acpi_disable = buffer[17];
-            let s4bios_req = buffer[18];
-            let pstate_control = buffer[19];
-            let pm1a_event_block = u32_from_slice(&buffer[20..24]);
-            let pm1b_event_block = u32_from_slice(&buffer[24..28]);
-            let pm1a_control_block = u32_from_slice(&buffer[28..32]);
-            let pm1b_control_block = u32_from_slice(&buffer[32..36]);
-            let pm2_control_block = u32_from_slice(&buffer[36..40]);
-            let pm_timer_block = u32_from_slice(&buffer[40..44]);
-            let gpe0_block = u32_from_slice(&buffer[44..48]);
-            let gpe1_block = u32_from_slice(&buffer[48..52]);
-            let pm1_event_length = buffer[52];
-            let pm1_control_length = buffer[53];
-            let pm2_control_length = buffer[54];
-            let pm_timer_length = buffer[55];
-            let gpe0_length = buffer[56];
-            let gpe1_length = buffer[57];
-            let gpe1_base = buffer[58];
-            let c_state_control = buffer[59];
-            let worst_c2_latency = u16_from_slice(&buffer[60..62]);
-            let worst_c3_latency = u16_from_slice(&buffer[62..64]);
-            let flush_size = u16_from_slice(&buffer[64..66]);
-            let flush_stride = u16_from_slice(&buffer[66..68]);
-            let duty_offset = buffer[68];
-            let duty_width = buffer[69];
-            let day_alarm = buffer[70];
-            let month_alarm = buffer[71];
-            let century = buffer[72];
-            let boot_architecture_flags = u16_from_slice(&buffer[73..75]);
-            let _reserved2 = buffer[75];
-            let flags = u32_from_slice(&buffer[76..80]);
-
-            Some(Self {
-                header,
-                firmware_control,
-                dsdt_address,
-                int_model,
-                preferred_power_management_profile,
-                sci_interrupt,
-                smi_command_port,
-                acpi_enable,
-                acpi_disable,
-                s4bios_req,
-                pstate_control,
-                pm1a_event_block,
-                pm1b_event_block,
-                pm1a_control_block,
-                pm1b_control_block,
-                pm2_control_block,
-                pm_timer_block,
-                gpe0_block,
-                gpe1_block,
-                pm1_event_length,
-                pm1_control_length,
-                pm2_control_length,
-                pm_timer_length,
-                gpe0_length,
-                gpe1_length,
-                gpe1_base,
-                c_state_control,
-                worst_c2_latency,
-                worst_c3_latency,
-                flush_size,
-                flush_stride,
-                duty_offset,
-                duty_width,
-                day_alarm,
-                month_alarm,
-                century,
-                boot_architecture_flags,
-                _reserved2,
-                flags,
-            })
-        }
-    }
-}
-
-fn u32_from_slice(buffer: &[u8]) -> u32 {
-    let mut bytes: [u8; 4] = [0; 4];
-    bytes.copy_from_slice(buffer);
-    u32::from_ne_bytes(bytes)
-}
-
-fn u16_from_slice(buffer: &[u8]) -> u16 {
-    let mut bytes: [u8; 2] = [0; 2];
-    bytes.copy_from_slice(buffer);
-    u16::from_ne_bytes(bytes)
-}
-
-fn validate_checksum_ptr(ptr: *const u8, length: usize) -> bool {
-    let mut sum: u32 = 0;
-
-    for i in 0..length {
-        unsafe {
-            sum += ptr.add(i).read() as u32;
+            PhysicalMapping::new(
+                physical_address,
+                NonNull::new_unchecked(virt_addr.as_u64() as *mut T),
+                size,
+                num_pages * 4096,
+                KernelAcpiHandler,
+            )
         }
     }
 
-    (sum % 0x100) == 0
-}
-
-fn validate_checksum(bytes: &[u8]) -> bool {
-    let sum: u32 = bytes.iter().map(|b| *b as u32).sum();
-    (sum % 0x100) == 0
+    fn unmap_physical_region<T>(region: &::acpi::PhysicalMapping<Self, T>) {}
 }

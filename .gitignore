@@ -29,3 +29,7 @@ build/
 # Added by cargo
 
 /target
+
+
+# QEMU traces
+*.log

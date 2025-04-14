@@ -4,6 +4,8 @@ use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
 use spin::Mutex;
 use x86_64::instructions::port::Port;
 
+use crate::log;
+
 const SCANCODE_PORT: u16 = 0x60;
 
 lazy_static! {
@@ -87,6 +89,7 @@ pub fn handle_keyboard_interrupt() {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
                 DecodedKey::Unicode(_character) => {
+                    log!("{}", _character);
                     // KEYBOARD_BUFFER.put_char(character);
                 }
                 _ => {} // DecodedKey::RawKey(key) => kprint!("{:?}", key),
