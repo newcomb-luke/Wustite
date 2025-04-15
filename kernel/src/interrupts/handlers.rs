@@ -1,18 +1,6 @@
 use x86_64::structures::idt::{InterruptStackFrame, PageFaultErrorCode};
 
-use crate::{drivers::keyboard::handle_keyboard_interrupt, logln};
-
-pub extern "x86-interrupt" fn ps2_keyboard_handler(_stack_frame: InterruptStackFrame) {
-    handle_keyboard_interrupt();
-
-    crate::interrupts::acknowledge_interrupt();
-}
-
-pub extern "x86-interrupt" fn ps2_mouse_handler(_stack_frame: InterruptStackFrame) {
-    logln!("Mouse moved");
-
-    crate::interrupts::acknowledge_interrupt();
-}
+use crate::logln;
 
 pub extern "x86-interrupt" fn spurious_interrupt_handler(stack_frame: InterruptStackFrame) {
     logln!("SPURIOUS INTERRUPT\n{:#?}", stack_frame);
@@ -31,7 +19,10 @@ pub extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFram
     kernel::hlt_loop();
 }
 
-pub extern "x86-interrupt" fn general_protection_handler(stack_frame: InterruptStackFrame, error_code: u64) {
+pub extern "x86-interrupt" fn general_protection_handler(
+    stack_frame: InterruptStackFrame,
+    error_code: u64,
+) {
     logln!("EXCEPTION: GENERAL PROTECTION");
     logln!("Error code: {:?}", error_code);
     logln!("{:#?}", stack_frame);

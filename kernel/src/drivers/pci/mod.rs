@@ -30,7 +30,7 @@ impl PCISubsystemInner {
 
         for bus in 0..8 {
             for device in 0..32 {
-                let device_addr = PCIAddress::new(bus, device);
+                let device_addr = PCIAddress::device(bus, device);
                 if let Some(header) = self.get_pci_header(device_addr) {
                     if !header.is_multifunction {
                         if let Some(device) = self.get_device(header, device_addr) {
@@ -354,7 +354,7 @@ pub struct PCIAddress {
 }
 
 impl PCIAddress {
-    pub fn new(bus: u8, device: u8) -> Self {
+    pub fn device(bus: u8, device: u8) -> Self {
         Self {
             bus,
             device,

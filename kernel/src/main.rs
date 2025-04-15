@@ -11,14 +11,14 @@ mod entry;
 mod gdt;
 mod interrupts;
 mod memory;
+mod state;
+mod resource;
 
 use acpi::init_acpi;
 use common::BootInfo;
 use drivers::{
-    keyboard::KEYBOARD_BUFFER,
-    nvme::NVMEDriver,
-    pci::PCIDeviceClass,
-    serial::{SERIAL0, initialize_serial},
+    input::KEYBOARD_BUFFER,
+    serial::initialize_serial,
 };
 use kernel::hlt_loop;
 use memory::initialize_memory;
@@ -42,33 +42,32 @@ fn start_kernel(boot_info: &BootInfo) {
         crate::interrupts::local_apic::enable_local_apic(0xFF);
     }
 
-    x86_64::instructions::interrupts::enable();
-
-    hlt_loop();
-
     let pci_devices = PCI_SUBSYSTEM.enumerate_pci_devices();
 
-    let mut nvme_driver = None;
+    // let mut nvme_driver = None;
 
     for device in pci_devices {
         logln!("{}", device);
 
-        continue;
-
         #[allow(irrefutable_let_patterns)]
         if let PCIDevice::General(device) = device {
-            if device.device_class()
-                == PCIDeviceClass::MassStorage(drivers::pci::MassStorageController::NVMController)
-            {
-                match NVMEDriver::new(device) {
-                    Ok(driver) => {
-                        nvme_driver = Some(driver);
-                    }
-                    Err(e) => {
-                        logln!("Failed to initialized NVMe driver: {e:?}");
-                    }
-                }
-            }
+
+            let interrupt_pin = device.interrupt_pin();
+
+            logln!("Int pin: {}", interrupt_pin);
+
+            // if device.device_class()
+            //     == PCIDeviceClass::MassStorage(drivers::pci::MassStorageController::NVMController)
+            // {
+            //     match NVMEDriver::new(device) {
+            //         Ok(driver) => {
+            //             nvme_driver = Some(driver);
+            //         }
+            //         Err(e) => {
+            //             logln!("Failed to initialized NVMe driver: {e:?}");
+            //         }
+            //     }
+            // }
             // if device.vendor_id() == 0x15AD && device.device_id() == 0x0405 {
             //     match VMWareSVGADriver::new(device) {
             //         Ok(driver) => {
@@ -84,6 +83,10 @@ fn start_kernel(boot_info: &BootInfo) {
             // }
         }
     }
+
+    x86_64::instructions::interrupts::enable();
+
+    hlt_loop();
 
     // if vga_driver.is_none() {
     //     logln!("No SVGA-compatible graphics device found");

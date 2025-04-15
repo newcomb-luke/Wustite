@@ -5,11 +5,13 @@ use core::arch::asm;
 pub mod ata;
 pub mod cmos;
 pub mod ide;
-pub mod keyboard;
+pub mod input;
 pub mod nvme;
 pub mod pci;
 pub mod serial;
 pub mod video;
+
+pub type DriverResult = Result<(), ()>;
 
 pub unsafe fn write_io_port_u8(port: u16, data: u8) {
     unsafe {

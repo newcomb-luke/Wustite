@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 use core::ptr::NonNull;
 
 use acpi::{AcpiHandler, PhysicalMapping};
@@ -78,15 +80,15 @@ impl Handler for KernelAmlHandler {
         }
     }
 
-    fn read_pci_u8(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u8 {
+    fn read_pci_u8(&self, _segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u8 {
         PCI_SUBSYSTEM.pci_config_read_u8(PCIAddress::function(bus, device, function), offset as u8)
     }
 
-    fn read_pci_u16(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u16 {
+    fn read_pci_u16(&self, _segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u16 {
         PCI_SUBSYSTEM.pci_config_read_u16(PCIAddress::function(bus, device, function), offset as u8)
     }
 
-    fn read_pci_u32(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u32 {
+    fn read_pci_u32(&self, _segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u32 {
         PCI_SUBSYSTEM.pci_config_read_u32(PCIAddress::function(bus, device, function), offset as u8)
     }
 
