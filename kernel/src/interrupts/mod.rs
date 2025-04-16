@@ -4,6 +4,7 @@ use handlers::{
     breakpoint_handler, double_fault_handler, general_protection_handler, nmi_handler,
     page_fault_handler, spurious_interrupt_handler,
 };
+use kernel::SystemError;
 use lazy_static::lazy_static;
 use paste::paste;
 use vectors::{LOGICAL_TO_VECTOR_MAP, VECTOR_TO_LOGICAL_MAP};
@@ -150,12 +151,12 @@ pub fn init() {
     IDT.load();
 }
 
-pub fn create_irq_mapping(gsi: GSI) -> Result<LogicalIrq, ()> {
+pub fn create_irq_mapping(gsi: GSI) -> Result<LogicalIrq, SystemError> {
     if let Some(logical_irq) = GSI_MAPPING_TABLE.get_entry(gsi) {
         return Ok(logical_irq);
     }
 
-    let logical_irq = LOGICAL_IRQ_MAPPING_TABLE.next_free_irq().ok_or(())?;
+    let logical_irq = LOGICAL_IRQ_MAPPING_TABLE.next_free_irq().ok_or(SystemError::NoResourcesAvailable)?;
 
     kprintln!(
         "Created new interrupt mapping from GSI {} to logical IRQ {}",
@@ -168,12 +169,12 @@ pub fn create_irq_mapping(gsi: GSI) -> Result<LogicalIrq, ()> {
     Ok(logical_irq)
 }
 
-pub fn assign_irq_vector(irq: LogicalIrq) -> Result<Vector, ()> {
+pub fn assign_irq_vector(irq: LogicalIrq) -> Result<Vector, SystemError> {
     if let Some(vector) = LOGICAL_TO_VECTOR_MAP.get_entry(irq) {
         return Ok(vector);
     }
 
-    let vector = VECTOR_TO_LOGICAL_MAP.next_free_vector().ok_or(())?;
+    let vector = VECTOR_TO_LOGICAL_MAP.next_free_vector().ok_or(SystemError::NoResourcesAvailable)?;
 
     kprintln!(
         "Assigned logical IRQ {} to LAPIC interrupt vector 0x{:02x}",

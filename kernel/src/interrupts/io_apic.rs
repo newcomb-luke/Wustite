@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+
+use kernel::SystemError;
 use spin::Mutex;
 use x86_64::{PhysAddr, structures::paging::PageTableFlags};
 
@@ -97,6 +100,10 @@ impl IoApic {
     }
 
     pub fn is_redirect_set(&self, gsi: GSI) -> bool {
+        if !self.is_gsi_in_range(gsi) {
+            return false;
+        }
+
         let lower_register = self.first_redirect_register_for_gsi(gsi);
         // let upper_register = lower_register + 1;
 
@@ -121,7 +128,11 @@ impl IoApic {
         polarity: PinPolarity,
         mask: bool,
         destination: Destination,
-    ) {
+    ) -> Result<(), SystemError> {
+        if !self.is_gsi_in_range(gsi) {
+            return Err(SystemError::ResourceInvalid);
+        }
+
         let mut lower = vector.as_u8() as u32;
         lower |= delivery_mode.as_u32() << 8;
         lower |= destination.mode_bit() << 11;
@@ -146,6 +157,19 @@ impl IoApic {
             gsi.as_u8(),
             vector.as_u8()
         );
+
+        Ok(())
+    }
+
+    fn is_gsi_in_range(&self, gsi: GSI) -> bool {
+        if let Some(inner) = self.inner.lock().as_ref() {
+            let lower_bound = inner.global_system_interrupt_base as u8;
+            let upper_bound = lower_bound + inner.entry_count;
+
+            gsi.as_u8() >= lower_bound && gsi.as_u8() <= upper_bound
+        } else {
+            false
+        }
     }
 
     fn first_redirect_register_for_gsi(&self, gsi: GSI) -> u8 {

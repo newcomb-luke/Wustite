@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use spin::Once;
 use x86_64::{PhysAddr, structures::paging::PageTableFlags};
 

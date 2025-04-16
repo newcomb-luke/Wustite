@@ -207,7 +207,7 @@ impl NVMEDriver {
     }
 
     fn wait_until_controller_ready(base_address: u64) {
-        while (Self::read_controller_status(base_address) & 1 == 0) {}
+        while Self::read_controller_status(base_address) & 1 == 0 {}
     }
 
     fn read_controller_status(base_address: u64) -> u32 {

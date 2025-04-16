@@ -16,7 +16,7 @@ mod state;
 
 use acpi::init_acpi;
 use common::BootInfo;
-use drivers::serial::initialize_serial;
+use drivers::{input::PS2_KEYBOARD_DRIVER, serial::initialize_serial};
 use kernel::hlt_loop;
 use memory::initialize_memory;
 use state::timer::LEGACY_TIMER_DRIVER;
@@ -33,10 +33,13 @@ fn start_kernel(boot_info: &BootInfo) {
 
     kprintln!("Legacy Timer: Initializing");
 
-    if LEGACY_TIMER_DRIVER.initialize().is_ok() {
-        kprintln!("Legacy Timer: Initialized");
-    } else {
-        kprintln!("Legacy Timer: Failed to initialize");
+    match LEGACY_TIMER_DRIVER.initialize() {
+        Ok(_) => {
+            kprintln!("Legacy Timer: Initialized");
+        },
+        Err(e) => {
+            kprintln!("Legacy Timer: Failed to initialize: {:?}", e);
+        }
     }
 
     unsafe {
@@ -44,6 +47,16 @@ fn start_kernel(boot_info: &BootInfo) {
     }
 
     x86_64::instructions::interrupts::enable();
+
+    kprintln!("PS/2 Keyboard: Initializing");
+    match PS2_KEYBOARD_DRIVER.initialize() {
+        Ok(_) => {
+            kprintln!("PS/2 Keyboard: Initialized");
+        },
+        Err(e) => {
+            kprintln!("PS/2 Keyboard: Failed to initialize: {:?}", e);
+        }
+    }
 
     let pci_devices = PCI_SUBSYSTEM.enumerate_pci_devices();
 

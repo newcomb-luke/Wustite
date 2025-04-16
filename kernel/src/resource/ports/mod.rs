@@ -1,10 +1,5 @@
+use kernel::SystemError;
 use spin::mutex::Mutex;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PortError {
-    PortInUse,
-    PortOutOfBounds
-}
 
 pub static PORTS_TABLE: PortsTable = PortsTable::new();
 
@@ -19,7 +14,7 @@ impl PortsTable {
         }
     }
 
-    pub fn request_port(&self, port: u16) -> Result<(), PortError> {
+    pub fn request_port(&self, port: u16) -> Result<(), SystemError> {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let inner = self.mapping.lock();
 
@@ -27,10 +22,10 @@ impl PortsTable {
                 if !in_use {
                     Ok(())
                 } else {
-                    Err(PortError::PortInUse)
+                    Err(SystemError::ResourceInUse)
                 }
             } else {
-                Err(PortError::PortOutOfBounds)
+                Err(SystemError::ResourceInvalid)
             }
         })
     }

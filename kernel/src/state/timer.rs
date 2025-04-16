@@ -2,8 +2,7 @@ use crate::{
     acpi::acpi_request_irq,
     drivers::{DriverResult, write_io_port_u8},
     interrupts::{GSI, IrqResult, LogicalIrq},
-    log,
-    resource::{request_irq, request_port},
+    resource::request_port,
     state::increment_system_clock,
 };
 
@@ -13,7 +12,7 @@ const COMMAND_REGISTER_PORT: u16 = 0x43;
 // The target frequency here is 500 Hz
 // Technically 1193182 / 500 = 2386.364
 const TIMER_DIVIDER: u16 = 2386;
-const SYSTEM_CLOCK_INCREMENT_NANOS: u64 = 2000000;
+const SYSTEM_CLOCK_INCREMENT_NANOS: u64 = 2_000_000;
 
 pub static LEGACY_TIMER_DRIVER: LegacyTimer = LegacyTimer::new();
 
@@ -25,8 +24,8 @@ impl LegacyTimer {
     }
 
     pub fn initialize(&self) -> DriverResult {
-        request_port(COMMAND_REGISTER_PORT).map_err(|_| ())?;
-        request_port(CHANNEL0_DATA_PORT).map_err(|_| ())?;
+        request_port(COMMAND_REGISTER_PORT)?;
+        request_port(CHANNEL0_DATA_PORT)?;
 
         acpi_request_irq(
             GSI::from_u8(0),
@@ -34,13 +33,14 @@ impl LegacyTimer {
             Self::handle_interrupt,
         )?;
 
-        // This just works, which makes it easy
         //      Channel = 0
-        //      Latch count value command = 0
-        //      Mode 0 (interrupt on terminal count) = 0
+        //      Access mode: lobyte/hibyte = 3 = 0b11
+        //      Mode 2 (rate generator) = 2 = 0b010
         //      16-bit binary counter = 0
         unsafe {
-            write_io_port_u8(COMMAND_REGISTER_PORT, 0);
+            let access_mode = 0b11 << 4;
+            let mode2 = 0b010 << 1;
+            write_io_port_u8(COMMAND_REGISTER_PORT, access_mode | mode2);
         }
 
         unsafe {

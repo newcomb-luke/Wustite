@@ -2,6 +2,8 @@
 
 use core::arch::asm;
 
+use kernel::SystemError;
+
 pub mod ata;
 pub mod cmos;
 pub mod ide;
@@ -11,7 +13,7 @@ pub mod pci;
 pub mod serial;
 pub mod video;
 
-pub type DriverResult = Result<(), ()>;
+pub type DriverResult = Result<(), SystemError>;
 
 pub unsafe fn write_io_port_u8(port: u16, data: u8) {
     unsafe {

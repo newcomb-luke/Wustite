@@ -3,14 +3,13 @@ use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
 use spin::{Mutex, Once};
 
 use crate::{
-    drivers::{DriverResult, read_io_port_u8},
-    interrupts::{GSI, IrqResult, LogicalIrq},
-    log,
-    resource::{request_irq, request_port},
+    acpi::acpi_request_irq, drivers::{read_io_port_u8, DriverResult}, interrupts::{IrqResult, LogicalIrq, GSI}, kprintln, log, resource::request_port
 };
 
 const SCANCODE_PORT: u16 = 0x60;
 const IRQ_NUMBER: u8 = 1;
+
+pub static PS2_KEYBOARD_DRIVER: PS2KeyboardDriver = PS2KeyboardDriver::new();
 
 struct PS2KeyboardInner {
     keyboard: Keyboard<layouts::Us104Key, ScancodeSet1>,
@@ -27,7 +26,7 @@ impl PS2KeyboardDriver {
         }
     }
 
-    pub fn init(&'static mut self) -> DriverResult {
+    pub fn initialize(&'static self) -> DriverResult {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let inner = self.inner.lock();
 
@@ -35,9 +34,9 @@ impl PS2KeyboardDriver {
                 panic!("Attempted to initialize PS/2 keyboard driver twice");
             }
 
-            request_port(SCANCODE_PORT).map_err(|_| ())?;
+            request_port(SCANCODE_PORT)?;
 
-            request_irq(GSI::from_u8(IRQ_NUMBER), self, Self::handle_interrupt)?;
+            acpi_request_irq(GSI::from_u8(IRQ_NUMBER), &PS2_KEYBOARD_DRIVER, Self::handle_interrupt)?;
 
             inner.call_once(|| PS2KeyboardInner {
                 keyboard: Keyboard::new(
@@ -61,8 +60,8 @@ impl PS2KeyboardDriver {
         if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
             if let Some(key) = keyboard.process_keyevent(key_event) {
                 match key {
-                    DecodedKey::Unicode(_character) => {
-                        log!("{}", _character);
+                    DecodedKey::Unicode(character) => {
+                        kprintln!("New character from keyboard: {}", character);
                         // KEYBOARD_BUFFER.put_char(character);
                     }
                     _ => {} // DecodedKey::RawKey(key) => kprint!("{:?}", key),

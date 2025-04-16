@@ -1,5 +1,3 @@
-use crate::logln;
-
 use super::{pci::PCIGeneralDevice, write_io_port_u8, write_io_port_u16};
 
 const REG_DATA: u16 = 0;

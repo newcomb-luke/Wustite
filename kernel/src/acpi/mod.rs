@@ -1,19 +1,17 @@
 use acpi::{
-    AcpiTables, AmlTable, InterruptModel, PciConfigRegions, platform::interrupt::NmiProcessor,
+    AcpiTables, AmlTable, InterruptModel, platform::interrupt::NmiProcessor,
 };
 use alloc::boxed::Box;
 use aml::AmlContext;
 use common::BootInfo;
 use handlers::{KernelAcpiHandler, KernelAmlHandler};
+use kernel::SystemError;
 use spin::{Mutex, Once};
 use x86_64::PhysAddr;
 
 use crate::{
     interrupts::{
-        GSI, GSI_OVERRIDE_TABLE, GSIOverrideEntry, IrqHandler, assign_irq_vector,
-        create_irq_mapping,
-        io_apic::{DeliveryMode, Destination, PinPolarity, TriggerMode},
-        local_apic::LocalInterrupt,
+        assign_irq_vector, create_irq_mapping, io_apic::{DeliveryMode, Destination, PinPolarity, TriggerMode, IO_APIC}, local_apic::LocalInterrupt, GSIOverrideEntry, IrqHandler, GSI, GSI_OVERRIDE_TABLE
     },
     kprintln,
     memory::MEMORY_MAPPER,
@@ -338,25 +336,40 @@ pub fn acpi_request_irq<T>(
     isa: GSI,
     context: &'static T,
     handler: IrqHandler<T>,
-) -> Result<(), ()> {
-    let gsi = if let Some(gsi_override) = GSI_OVERRIDE_TABLE.check_override(isa) {
+) -> Result<(), SystemError> {
+    let (gsi, vector, trigger, polarity) = if let Some(gsi_override) = GSI_OVERRIDE_TABLE.check_override(isa) {
+        // An override existed in the ACPI tables
+
         let logical_irq = create_irq_mapping(gsi_override.gsi())?;
         let vector = assign_irq_vector(logical_irq)?;
 
-        crate::interrupts::io_apic::IO_APIC.set_redirect(
-            gsi_override.gsi(),
-            vector,
-            DeliveryMode::Fixed,
-            gsi_override.trigger(),
-            gsi_override.polarity(),
-            false,
-            Destination::Physical(0),
-        );
-
-        gsi_override.gsi()
+        (gsi_override.gsi(), vector, gsi_override.trigger(), gsi_override.polarity())
     } else {
-        isa
+        // No override existed in the ACPI tables, just map it directly
+
+        let logical_irq = create_irq_mapping(isa)?;
+        let vector = assign_irq_vector(logical_irq)?;
+
+        let (trigger, polarity) = if isa.as_u8() < 16 {
+            // This is an ISA standard IRQ line, and should have those defaults
+            (TriggerMode::Edge, PinPolarity::ActiveHigh)
+        } else {
+            // This is a non-ISA (probably PCI) IRQ line
+            (TriggerMode::Level, PinPolarity::ActiveLow)
+        };
+
+        (isa, vector, trigger, polarity)
     };
+
+    IO_APIC.set_redirect(
+        gsi,
+        vector,
+        DeliveryMode::Fixed,
+        trigger,
+        polarity,
+        false,
+        Destination::Physical(0),
+    )?;
 
     request_irq(gsi, context, handler)
 }
