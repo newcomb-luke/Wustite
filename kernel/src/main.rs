@@ -11,50 +11,52 @@ mod entry;
 mod gdt;
 mod interrupts;
 mod memory;
-mod state;
 mod resource;
+mod state;
 
 use acpi::init_acpi;
 use common::BootInfo;
-use drivers::{
-    input::KEYBOARD_BUFFER,
-    serial::initialize_serial,
-};
+use drivers::serial::initialize_serial;
 use kernel::hlt_loop;
 use memory::initialize_memory;
+use state::timer::LEGACY_TIMER_DRIVER;
 
 use crate::drivers::pci::{PCI_SUBSYSTEM, PCIDevice};
 
 fn start_kernel(boot_info: &BootInfo) {
     initialize_serial();
 
-    logln!(
-        "[info] Hello from Wustite version {}!",
-        env!("CARGO_PKG_VERSION")
-    );
+    kprintln!("Hello from Wustite version {}!", env!("CARGO_PKG_VERSION"));
 
     initialize_memory(boot_info);
     init_acpi(boot_info);
 
-    KEYBOARD_BUFFER.init();
+    kprintln!("Legacy Timer: Initializing");
+
+    if LEGACY_TIMER_DRIVER.initialize().is_ok() {
+        kprintln!("Legacy Timer: Initialized");
+    } else {
+        kprintln!("Legacy Timer: Failed to initialize");
+    }
 
     unsafe {
         crate::interrupts::local_apic::enable_local_apic(0xFF);
     }
+
+    x86_64::instructions::interrupts::enable();
 
     let pci_devices = PCI_SUBSYSTEM.enumerate_pci_devices();
 
     // let mut nvme_driver = None;
 
     for device in pci_devices {
-        logln!("{}", device);
+        kprintln!("{}", device);
 
         #[allow(irrefutable_let_patterns)]
         if let PCIDevice::General(device) = device {
-
             let interrupt_pin = device.interrupt_pin();
 
-            logln!("Int pin: {}", interrupt_pin);
+            kprintln!("Int pin: {}", interrupt_pin);
 
             // if device.device_class()
             //     == PCIDeviceClass::MassStorage(drivers::pci::MassStorageController::NVMController)
@@ -83,8 +85,6 @@ fn start_kernel(boot_info: &BootInfo) {
             // }
         }
     }
-
-    x86_64::instructions::interrupts::enable();
 
     hlt_loop();
 

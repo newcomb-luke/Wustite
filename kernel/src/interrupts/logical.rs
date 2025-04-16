@@ -7,15 +7,12 @@ pub static LOGICAL_IRQ_MAPPING_TABLE: LogicalIrqMappingTable = LogicalIrqMapping
 #[derive(Debug, Clone, Copy)]
 pub struct HandlerEntry {
     handler: ErasedIrqHandler,
-    context: usize
+    context: usize,
 }
 
 impl HandlerEntry {
     pub const fn new(handler: ErasedIrqHandler, context: usize) -> Self {
-        Self {
-            handler,
-            context
-        }
+        Self { handler, context }
     }
 
     pub fn call(&self, irq: LogicalIrq) -> IrqResult {
@@ -28,6 +25,12 @@ impl HandlerEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct LogicalIrq(u8);
+
+impl LogicalIrq {
+    pub fn as_u8(&self) -> u8 {
+        self.0
+    }
+}
 
 struct Inner {
     mappings: [Option<HandlerEntry>; 256],

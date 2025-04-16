@@ -2,23 +2,28 @@ use alloc::collections::VecDeque;
 use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
 use spin::{Mutex, Once};
 
-use crate::{drivers::{read_io_port_u8, DriverResult}, interrupts::{IrqResult, LogicalIrq}, log, resource::{request_irq, request_port}};
+use crate::{
+    drivers::{DriverResult, read_io_port_u8},
+    interrupts::{GSI, IrqResult, LogicalIrq},
+    log,
+    resource::{request_irq, request_port},
+};
 
 const SCANCODE_PORT: u16 = 0x60;
 const IRQ_NUMBER: u8 = 1;
 
-struct PS2KeyboardInner { 
+struct PS2KeyboardInner {
     keyboard: Keyboard<layouts::Us104Key, ScancodeSet1>,
 }
 
 pub struct PS2KeyboardDriver {
-    inner: Mutex<Once<PS2KeyboardInner>>
+    inner: Mutex<Once<PS2KeyboardInner>>,
 }
 
 impl PS2KeyboardDriver {
     const fn new() -> Self {
         Self {
-            inner: Mutex::new(Once::new())
+            inner: Mutex::new(Once::new()),
         }
     }
 
@@ -32,12 +37,14 @@ impl PS2KeyboardDriver {
 
             request_port(SCANCODE_PORT).map_err(|_| ())?;
 
-            request_irq(IRQ_NUMBER, self, Self::handle_interrupt)?;
+            request_irq(GSI::from_u8(IRQ_NUMBER), self, Self::handle_interrupt)?;
 
-            inner.call_once(|| {
-                PS2KeyboardInner {
-                    keyboard: Keyboard::new(ScancodeSet1::new(), layouts::Us104Key, HandleControl::Ignore)
-                }
+            inner.call_once(|| PS2KeyboardInner {
+                keyboard: Keyboard::new(
+                    ScancodeSet1::new(),
+                    layouts::Us104Key,
+                    HandleControl::Ignore,
+                ),
             });
 
             Ok(())
@@ -49,9 +56,7 @@ impl PS2KeyboardDriver {
         let keyboard_inner = inner.get_mut().unwrap();
         let keyboard = &mut keyboard_inner.keyboard;
 
-        let scancode = unsafe {
-            read_io_port_u8(SCANCODE_PORT)
-        };
+        let scancode = unsafe { read_io_port_u8(SCANCODE_PORT) };
 
         if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
             if let Some(key) = keyboard.process_keyevent(key_event) {
@@ -64,7 +69,7 @@ impl PS2KeyboardDriver {
                 }
             }
         }
- 
+
         IrqResult::Handled
     }
 }
@@ -131,5 +136,4 @@ impl KeyboardBuffer {
     }
 }
 
-pub fn handle_keyboard_interrupt() {
-}
+pub fn handle_keyboard_interrupt() {}

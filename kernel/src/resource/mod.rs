@@ -1,6 +1,12 @@
-use ports::{PortError, PORTS_TABLE};
+use ports::{PORTS_TABLE, PortError};
 
-use crate::interrupts::{ErasedIrqHandler, HandlerEntry, IrqHandler, LOGICAL_IRQ_MAPPING_TABLE};
+use crate::{
+    interrupts::{
+        ErasedIrqHandler, GSI, HandlerEntry, IrqHandler, LOGICAL_IRQ_MAPPING_TABLE,
+        assign_irq_vector, create_irq_mapping,
+    },
+    kprintln,
+};
 
 mod ports;
 
@@ -8,19 +14,25 @@ pub fn request_port(port: u16) -> Result<(), PortError> {
     PORTS_TABLE.request_port(port)
 }
 
-pub fn request_irq<T>(irq: u8, context: &'static T, handler: IrqHandler<T>) -> Result<(), ()> {
-    let logical_irq = LOGICAL_IRQ_MAPPING_TABLE.next_free_irq().ok_or(())?;
+pub fn request_irq<T>(gsi: GSI, context: &'static T, handler: IrqHandler<T>) -> Result<(), ()> {
+    let logical_irq = create_irq_mapping(gsi)?;
+
+    assign_irq_vector(logical_irq)?;
 
     let handler_ptr = handler as *const ();
 
-    let erased_handler: ErasedIrqHandler = unsafe {
-        core::mem::transmute(handler_ptr)
-    };
+    let erased_handler: ErasedIrqHandler = unsafe { core::mem::transmute(handler_ptr) };
 
     let context = context as *const T as usize;
 
     let entry = HandlerEntry::new(erased_handler, context);
 
     LOGICAL_IRQ_MAPPING_TABLE.set_entry(logical_irq, entry);
-    Err(())
+
+    kprintln!(
+        "Assigned interrupt handler to logical IRQ {}",
+        logical_irq.as_u8()
+    );
+
+    Ok(())
 }

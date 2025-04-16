@@ -1,41 +1,44 @@
-use core::str::FromStr;
-
-use acpi::{platform::interrupt::NmiProcessor, AcpiTables, AmlTable, InterruptModel, PciConfigRegions};
-use alloc::{boxed::Box, vec::Vec};
-use aml::{AmlContext, AmlName, AmlValue, LevelType};
+use acpi::{
+    AcpiTables, AmlTable, InterruptModel, PciConfigRegions, platform::interrupt::NmiProcessor,
+};
+use alloc::boxed::Box;
+use aml::AmlContext;
 use common::BootInfo;
-use devices::{AcpiDevice, acpi_device_from_hid};
 use handlers::{KernelAcpiHandler, KernelAmlHandler};
 use spin::{Mutex, Once};
 use x86_64::PhysAddr;
 
 use crate::{
     interrupts::{
+        GSI, GSI_OVERRIDE_TABLE, GSIOverrideEntry, IrqHandler, assign_irq_vector,
+        create_irq_mapping,
         io_apic::{DeliveryMode, Destination, PinPolarity, TriggerMode},
         local_apic::LocalInterrupt,
     },
-    logln,
+    kprintln,
     memory::MEMORY_MAPPER,
+    resource::request_irq,
 };
 
 mod devices;
 mod handlers;
 
 pub static INTERPRETER: Interpreter = Interpreter::new();
+pub static ACPI_TABLES: Mutex<Once<AcpiTables<KernelAcpiHandler>>> = Mutex::new(Once::new());
 
 pub struct Interpreter {
-    aml: Mutex<Once<AmlContext>>
+    aml: Mutex<Once<AmlContext>>,
 }
 
 impl Interpreter {
     const fn new() -> Self {
         Self {
-            aml: Mutex::new(Once::new())
+            aml: Mutex::new(Once::new()),
         }
     }
 
     fn initialize(&self, dsdt_table: AmlTable) {
-        logln!("[info] ACPI: Initializing interpreter");
+        kprintln!("ACPI: Initializing interpreter");
 
         let aml = self.aml.lock();
 
@@ -51,32 +54,33 @@ impl Interpreter {
                 .unwrap()
         };
 
-        let dsdt_table_slice =
-            unsafe { core::slice::from_raw_parts(dsdt_address.as_ptr(), dsdt_table.length as usize) };
+        let dsdt_table_slice = unsafe {
+            core::slice::from_raw_parts(dsdt_address.as_ptr(), dsdt_table.length as usize)
+        };
 
         context.parse_table(dsdt_table_slice).unwrap();
         context.initialize_objects().unwrap();
 
-        aml.call_once(|| {
-            context
-        });
+        aml.call_once(|| context);
 
-        logln!("[info] ACPI: Interpreter initialized");
+        kprintln!("ACPI: Interpreter initialized");
     }
 }
 
 pub fn init_acpi(boot_info: &BootInfo) {
-    logln!("[info] ACPI: Initializing");
+    kprintln!("ACPI: Initializing tables");
 
-    let tables = unsafe {
+    let acpi_tables = unsafe {
         AcpiTables::from_rsdp(KernelAcpiHandler, boot_info.acpi_rsdp_address as usize).unwrap()
     };
 
-    INTERPRETER.initialize(tables.dsdt().unwrap());
+    INTERPRETER.initialize(acpi_tables.dsdt().unwrap());
 
-    logln!("[info] ACPI: Initializing interrupt controllers");
+    kprintln!("ACPI: Initializing interrupt controllers");
 
-    if let InterruptModel::Apic(interrupt_model) = tables.platform_info().unwrap().interrupt_model {
+    if let InterruptModel::Apic(interrupt_model) =
+        acpi_tables.platform_info().unwrap().interrupt_model
+    {
         // We know that this is safe because we get the local apic address straight from the ACPI tables
         unsafe {
             crate::interrupts::local_apic::initialize_local_apic(
@@ -116,30 +120,36 @@ pub fn init_acpi(boot_info: &BootInfo) {
         // Explicit hard-coded interrupt source overrides for the IO APIC
         // Other device-specific ones can be found elsewhere in the ACPI tables
         for source_override in interrupt_model.interrupt_source_overrides.iter() {
+            kprintln!(
+                "ACPI: Found interrupt source override for ISA {} to GSI {}",
+                source_override.isa_source,
+                source_override.global_system_interrupt
+            );
+
             let trigger_mode = match source_override.trigger_mode {
                 acpi::platform::interrupt::TriggerMode::SameAsBus => TriggerMode::Edge,
                 acpi::platform::interrupt::TriggerMode::Edge => TriggerMode::Edge,
                 acpi::platform::interrupt::TriggerMode::Level => TriggerMode::Level,
             };
 
-            crate::interrupts::io_apic::IO_APIC.set_redirect(
-                source_override.global_system_interrupt,
-                0x20 + source_override.isa_source,
-                DeliveryMode::Fixed,
-                trigger_mode,
-                PinPolarity::ActiveHigh,
-                false,
-                Destination::Physical(0),
-            );
+            let isa = GSI::from_u8(source_override.isa_source);
+            let gsi = GSI::from_u8(source_override.global_system_interrupt as u8);
+
+            register_gsi_override(isa, gsi, trigger_mode, PinPolarity::ActiveHigh);
         }
     }
 
-    if let Ok(_pci_config) = PciConfigRegions::new(&tables) {
-        logln!("[info] ACPI: Found MCFG - Root bus is PCIe");
-        unimplemented!()
-    } else {
-        logln!("[info] ACPI: Could not find MCFG - Falling back to legacy PCI");
+    {
+        let tables = ACPI_TABLES.lock();
+        tables.call_once(move || acpi_tables);
     }
+
+    // if let Ok(_pci_config) = PciConfigRegions::new(&tables) {
+    //     kprintln!("ACPI: Found MCFG - Root bus is PCIe");
+    //     unimplemented!()
+    // } else {
+    //     kprintln!("ACPI: Could not find MCFG - Falling back to legacy PCI");
+    // }
 
     // let mut paths = Vec::new();
 
@@ -322,4 +332,35 @@ pub fn init_acpi(boot_info: &BootInfo) {
     // let resources = aml::resource::resource_descriptor_list(&linka_crs).unwrap();
 
     // logln!("{:#?}", resources);
+}
+
+pub fn acpi_request_irq<T>(
+    isa: GSI,
+    context: &'static T,
+    handler: IrqHandler<T>,
+) -> Result<(), ()> {
+    let gsi = if let Some(gsi_override) = GSI_OVERRIDE_TABLE.check_override(isa) {
+        let logical_irq = create_irq_mapping(gsi_override.gsi())?;
+        let vector = assign_irq_vector(logical_irq)?;
+
+        crate::interrupts::io_apic::IO_APIC.set_redirect(
+            gsi_override.gsi(),
+            vector,
+            DeliveryMode::Fixed,
+            gsi_override.trigger(),
+            gsi_override.polarity(),
+            false,
+            Destination::Physical(0),
+        );
+
+        gsi_override.gsi()
+    } else {
+        isa
+    };
+
+    request_irq(gsi, context, handler)
+}
+
+fn register_gsi_override(isa: GSI, gsi: GSI, trigger: TriggerMode, polarity: PinPolarity) {
+    GSI_OVERRIDE_TABLE.add_override(isa, GSIOverrideEntry::new(gsi, trigger, polarity));
 }

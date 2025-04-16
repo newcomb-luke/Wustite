@@ -1,43 +1,102 @@
 use spin::Mutex;
 
-use super::LogicalIrq;
+use super::{
+    GSI, LogicalIrq,
+    io_apic::{PinPolarity, TriggerMode},
+};
 
 struct Inner {
-    mappings: [Option<LogicalIrq>; 256]
+    mappings: [Option<LogicalIrq>; 256],
 }
 
 impl Inner {
     const fn new() -> Self {
         Self {
-            mappings: [None; 256]
+            mappings: [None; 256],
         }
     }
 }
 
 pub static GSI_MAPPING_TABLE: GSIMappingTable = GSIMappingTable::new();
+pub static GSI_OVERRIDE_TABLE: GSIOverrideTable = GSIOverrideTable::new();
 
 pub struct GSIMappingTable {
-    inner: Mutex<Inner>
+    inner: Mutex<Inner>,
 }
 
 impl GSIMappingTable {
     const fn new() -> Self {
         Self {
-            inner: Mutex::new(Inner::new())
+            inner: Mutex::new(Inner::new()),
         }
     }
 
-    pub fn set_entry(&self, index: u8, entry: LogicalIrq) {
+    pub fn set_entry(&self, gsi: GSI, entry: LogicalIrq) {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let mut inner = self.inner.lock();
-            inner.mappings[index as usize] = Some(entry);
+            inner.mappings[gsi.as_u8() as usize] = Some(entry);
         });
     }
 
-    pub fn get_entry(&self, index: u8) -> Option<LogicalIrq> {
+    pub fn get_entry(&self, gsi: GSI) -> Option<LogicalIrq> {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let inner = self.inner.lock();
-            inner.mappings[index as usize]
+            inner.mappings[gsi.as_u8() as usize]
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GSIOverrideEntry {
+    gsi: GSI,
+    trigger: TriggerMode,
+    polarity: PinPolarity,
+}
+
+impl GSIOverrideEntry {
+    pub fn new(gsi: GSI, trigger: TriggerMode, polarity: PinPolarity) -> Self {
+        Self {
+            gsi,
+            trigger,
+            polarity,
+        }
+    }
+
+    pub fn gsi(&self) -> GSI {
+        self.gsi
+    }
+
+    pub fn trigger(&self) -> TriggerMode {
+        self.trigger
+    }
+
+    pub fn polarity(&self) -> PinPolarity {
+        self.polarity
+    }
+}
+
+pub struct GSIOverrideTable {
+    inner: Mutex<[Option<GSIOverrideEntry>; 256]>,
+}
+
+impl GSIOverrideTable {
+    const fn new() -> Self {
+        Self {
+            inner: Mutex::new([None; 256]),
+        }
+    }
+
+    pub fn add_override(&self, isa: GSI, gsi_override: GSIOverrideEntry) {
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            let mut inner = self.inner.lock();
+            inner[isa.as_u8() as usize] = Some(gsi_override);
+        });
+    }
+
+    pub fn check_override(&self, isa: GSI) -> Option<GSIOverrideEntry> {
+        x86_64::instructions::interrupts::without_interrupts(|| {
+            let inner = self.inner.lock();
+            inner[isa.as_u8() as usize]
         })
     }
 }

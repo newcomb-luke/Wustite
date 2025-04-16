@@ -2,7 +2,7 @@ use core::fmt::Write;
 use spin::Mutex;
 
 use super::{read_io_port_u8, write_io_port_u8};
-use crate::logln;
+use crate::kprintln;
 
 const COM1_PORT: u16 = 0x3F8;
 
@@ -30,7 +30,7 @@ pub fn initialize_serial() {
         serial.initialize();
     }
 
-    logln!("[info] Serial: Initialized");
+    kprintln!("Serial: Initialized");
 }
 
 pub struct SerialPort {
@@ -153,6 +153,27 @@ macro_rules! log {
 macro_rules! logln {
     () => ($crate::log!("\n"));
     ($($arg:tt)*) => ($crate::log!("{}\n", format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! kprintln {
+    () => {{
+        let time = $crate::state::get_system_time();
+        $crate::logln!(
+            "[{:6}.{:03}]",
+            time.seconds(),
+            time.nanoseconds() / 1_000_000
+        );
+    }};
+    ($($arg:tt)*) => {{
+        let time = $crate::state::get_system_time();
+        $crate::logln!(
+            "[{:6}.{:03}] {}",
+            time.seconds(),
+            time.nanoseconds() / 1_000_000,
+            format_args!($($arg)*)
+        );
+    }}
 }
 
 #[doc(hidden)]

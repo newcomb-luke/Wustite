@@ -1,7 +1,7 @@
 use spin::Once;
 use x86_64::{PhysAddr, structures::paging::PageTableFlags};
 
-use crate::{logln, memory::MEMORY_MAPPER};
+use crate::{kprintln, memory::MEMORY_MAPPER};
 
 // Register offset definitions
 const EOI_REG: u16 = 0x0B0;
@@ -57,8 +57,6 @@ pub static LOCAL_APIC: Once<LocalApic> = Once::new();
 
 /// The caller must guarantee that this is in fact the proper physical base address for the LAPIC
 pub unsafe fn initialize_local_apic(base_address: u64) {
-    logln!("[info] LAPIC: Initializing at 0x{:08x}", base_address);
-
     if LOCAL_APIC.is_completed() {
         panic!("Attempted to initialize LAPIC twice");
     }
@@ -85,7 +83,7 @@ pub unsafe fn initialize_local_apic(base_address: u64) {
 
     LOCAL_APIC.call_once(|| LocalApic::new(virt_base_address.as_u64()));
 
-    logln!("[info] LAPIC: Initialized");
+    kprintln!("LAPIC: Initialized at 0x{:08x}", base_address);
 }
 
 /// SAFETY: The local ACPI must have been initialized previously
@@ -101,8 +99,8 @@ pub unsafe fn enable_local_apic(spurious_interrupt_vector: u8) {
             .write_register(SPURIOUS_INTERRUPT_VECTOR_REG, value);
     }
 
-    logln!(
-        "[info] LAPIC: Enabled with spurious interrupt vector of 0x{:02x}",
+    kprintln!(
+        "LAPIC: Enabled with spurious interrupt vector of 0x{:02x}",
         spurious_interrupt_vector
     );
 }
@@ -121,7 +119,7 @@ pub unsafe fn disable_local_apic() {
         local_apic.write_register(SPURIOUS_INTERRUPT_VECTOR_REG, new_value);
     }
 
-    logln!("[info] LAPIC: Disabled");
+    kprintln!("LAPIC: Disabled");
 }
 
 /// SAFETY: The local ACPI must have been initialized previously
@@ -139,8 +137,8 @@ pub unsafe fn configure_nmi(local_interrupt: LocalInterrupt) {
         LOCAL_APIC.wait().write_register(reg, NMI_DELIVERY);
     }
 
-    logln!(
-        "[info] LAPIC: Local interrupt {} set as NMI",
+    kprintln!(
+        "LAPIC: Local interrupt {} set as NMI",
         local_interrupt.as_u8()
     );
 }

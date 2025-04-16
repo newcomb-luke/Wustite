@@ -9,7 +9,7 @@ use x86_64::{
     },
 };
 
-use crate::logln;
+use crate::kprintln;
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {
@@ -54,7 +54,7 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
 static mut PHYS_MEM_OFFSET: u64 = 0;
 
 pub fn initialize_memory(boot_info: &BootInfo) {
-    logln!("[info] Memory: Initializing");
+    kprintln!("Memory: Initializing");
 
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { init(phys_mem_offset) };
@@ -73,7 +73,7 @@ pub fn initialize_memory(boot_info: &BootInfo) {
 
     MEMORY_MAPPER.init(mapper, frame_allocator);
 
-    logln!("[info] Memory: Initialized");
+    kprintln!("Memory: Initialized");
 }
 
 /// Initialize a new OffsetPageTable.

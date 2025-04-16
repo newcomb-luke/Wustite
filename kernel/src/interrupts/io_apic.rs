@@ -1,7 +1,9 @@
 use spin::Mutex;
 use x86_64::{PhysAddr, structures::paging::PageTableFlags};
 
-use crate::{logln, memory::MEMORY_MAPPER};
+use crate::{kprintln, memory::MEMORY_MAPPER};
+
+use super::{GSI, Vector};
 
 const REGISTER_SELECT: u64 = 0x00;
 const REGISTER_WINDOW: u64 = 0x10;
@@ -51,12 +53,6 @@ impl IoApic {
     }
 
     pub fn init(&self, base_address: u64, id: u8, global_system_interrupt_base: u32) {
-        logln!(
-            "[info] IO APIC {}: Initializing at 0x{:08x}",
-            id,
-            base_address
-        );
-
         {
             let mut inner = self.inner.lock();
 
@@ -81,6 +77,16 @@ impl IoApic {
 
             let entries_count = (io_apic_version >> 16) as u8 + 1;
 
+            let last_gsi = global_system_interrupt_base + (entries_count - 1) as u32;
+
+            kprintln!(
+                "IO APIC {}: Initializing at 0x{:08x} with GSI {}-{}",
+                id,
+                base_address,
+                global_system_interrupt_base,
+                last_gsi
+            );
+
             *inner = Some(IoApicInner::new(
                 virt_base_address,
                 id,
@@ -88,11 +94,9 @@ impl IoApic {
                 entries_count,
             ));
         }
-
-        logln!("[info] IO APIC {}: Initialized", id);
     }
 
-    pub fn is_redirect_set(&self, gsi: u32) -> bool {
+    pub fn is_redirect_set(&self, gsi: GSI) -> bool {
         let lower_register = self.first_redirect_register_for_gsi(gsi);
         // let upper_register = lower_register + 1;
 
@@ -110,15 +114,15 @@ impl IoApic {
 
     pub fn set_redirect(
         &self,
-        gsi: u32,
-        vector: u8,
+        gsi: GSI,
+        vector: Vector,
         delivery_mode: DeliveryMode,
         trigger: TriggerMode,
         polarity: PinPolarity,
         mask: bool,
         destination: Destination,
     ) {
-        let mut lower = vector as u32;
+        let mut lower = vector.as_u8() as u32;
         lower |= delivery_mode.as_u32() << 8;
         lower |= destination.mode_bit() << 11;
         lower |= polarity.as_u32() << 13;
@@ -137,15 +141,15 @@ impl IoApic {
             panic!("Attempted to set IO APIC redirect before IO APIC was initialized");
         }
 
-        logln!(
-            "[info] IO APIC 0: Redirect set for GSI {} to vector 0x{:02x}",
-            gsi,
-            vector
+        kprintln!(
+            "IO APIC 0: Redirect set for GSI {} to vector 0x{:02x}",
+            gsi.as_u8(),
+            vector.as_u8()
         );
     }
 
-    fn first_redirect_register_for_gsi(&self, gsi: u32) -> u8 {
-        IO_APIC_REDIRECT_REG_START + (gsi as u8) * 2
+    fn first_redirect_register_for_gsi(&self, gsi: GSI) -> u8 {
+        IO_APIC_REDIRECT_REG_START + (gsi.as_u8()) * 2
     }
 }
 
