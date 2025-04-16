@@ -4,13 +4,13 @@ use spin::mutex::Mutex;
 pub static PORTS_TABLE: PortsTable = PortsTable::new();
 
 pub struct PortsTable {
-    mapping: Mutex<[bool; 256]>
+    mapping: Mutex<[bool; 256]>,
 }
 
 impl PortsTable {
     const fn new() -> Self {
         Self {
-            mapping: Mutex::new([false; 256])
+            mapping: Mutex::new([false; 256]),
         }
     }
 

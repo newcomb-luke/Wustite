@@ -3,7 +3,11 @@ use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
 use spin::{Mutex, Once};
 
 use crate::{
-    acpi::acpi_request_irq, drivers::{read_io_port_u8, DriverResult}, interrupts::{IrqResult, LogicalIrq, GSI}, kprintln, log, resource::request_port
+    acpi::acpi_request_irq,
+    drivers::{DriverResult, read_io_port_u8},
+    interrupts::{GSI, IrqResult, LogicalIrq},
+    kprintln, log,
+    resource::request_port,
 };
 
 const SCANCODE_PORT: u16 = 0x60;
@@ -36,7 +40,11 @@ impl PS2KeyboardDriver {
 
             request_port(SCANCODE_PORT)?;
 
-            acpi_request_irq(GSI::from_u8(IRQ_NUMBER), &PS2_KEYBOARD_DRIVER, Self::handle_interrupt)?;
+            acpi_request_irq(
+                GSI::from_u8(IRQ_NUMBER),
+                &PS2_KEYBOARD_DRIVER,
+                Self::handle_interrupt,
+            )?;
 
             inner.call_once(|| PS2KeyboardInner {
                 keyboard: Keyboard::new(

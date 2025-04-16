@@ -36,7 +36,7 @@ fn start_kernel(boot_info: &BootInfo) {
     match LEGACY_TIMER_DRIVER.initialize() {
         Ok(_) => {
             kprintln!("Legacy Timer: Initialized");
-        },
+        }
         Err(e) => {
             kprintln!("Legacy Timer: Failed to initialize: {:?}", e);
         }
@@ -52,7 +52,7 @@ fn start_kernel(boot_info: &BootInfo) {
     match PS2_KEYBOARD_DRIVER.initialize() {
         Ok(_) => {
             kprintln!("PS/2 Keyboard: Initialized");
-        },
+        }
         Err(e) => {
             kprintln!("PS/2 Keyboard: Failed to initialize: {:?}", e);
         }

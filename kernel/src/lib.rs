@@ -11,5 +11,5 @@ pub enum SystemError {
     ResourceNotFound,
     NoResourcesAvailable,
     ResourceInUse,
-    ResourceInvalid
+    ResourceInvalid,
 }

@@ -156,7 +156,9 @@ pub fn create_irq_mapping(gsi: GSI) -> Result<LogicalIrq, SystemError> {
         return Ok(logical_irq);
     }
 
-    let logical_irq = LOGICAL_IRQ_MAPPING_TABLE.next_free_irq().ok_or(SystemError::NoResourcesAvailable)?;
+    let logical_irq = LOGICAL_IRQ_MAPPING_TABLE
+        .next_free_irq()
+        .ok_or(SystemError::NoResourcesAvailable)?;
 
     kprintln!(
         "Created new interrupt mapping from GSI {} to logical IRQ {}",
@@ -174,7 +176,9 @@ pub fn assign_irq_vector(irq: LogicalIrq) -> Result<Vector, SystemError> {
         return Ok(vector);
     }
 
-    let vector = VECTOR_TO_LOGICAL_MAP.next_free_vector().ok_or(SystemError::NoResourcesAvailable)?;
+    let vector = VECTOR_TO_LOGICAL_MAP
+        .next_free_vector()
+        .ok_or(SystemError::NoResourcesAvailable)?;
 
     kprintln!(
         "Assigned logical IRQ {} to LAPIC interrupt vector 0x{:02x}",
