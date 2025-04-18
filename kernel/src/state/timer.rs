@@ -1,7 +1,7 @@
 use crate::{
     acpi::acpi_request_irq,
     drivers::{DriverResult, write_io_port_u8},
-    interrupts::{GSI, IrqResult, LogicalIrq},
+    interrupts::{GSI, IrqResult, VirtualIrq},
     resource::request_port,
     state::increment_system_clock,
 };
@@ -23,7 +23,7 @@ impl LegacyTimer {
         Self {}
     }
 
-    pub fn initialize(&self) -> DriverResult {
+    pub fn initialize(&self) -> DriverResult<()> {
         request_port(COMMAND_REGISTER_PORT)?;
         request_port(CHANNEL0_DATA_PORT)?;
 
@@ -50,7 +50,7 @@ impl LegacyTimer {
         Ok(())
     }
 
-    pub extern "C" fn handle_interrupt(&'static self, _irq: LogicalIrq) -> IrqResult {
+    pub extern "C" fn handle_interrupt(&'static self, _irq: VirtualIrq) -> IrqResult {
         increment_system_clock(SYSTEM_CLOCK_INCREMENT_NANOS);
         IrqResult::Handled
     }

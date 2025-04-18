@@ -1,12 +1,12 @@
 use spin::Mutex;
 
 use super::{
-    GSI, LogicalIrq,
+    GSI, VirtualIrq,
     io_apic::{PinPolarity, TriggerMode},
 };
 
 struct Inner {
-    mappings: [Option<LogicalIrq>; 256],
+    mappings: [Option<VirtualIrq>; 256],
 }
 
 impl Inner {
@@ -31,14 +31,14 @@ impl GSIMappingTable {
         }
     }
 
-    pub fn set_entry(&self, gsi: GSI, entry: LogicalIrq) {
+    pub fn set_entry(&self, gsi: GSI, irq: VirtualIrq) {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let mut inner = self.inner.lock();
-            inner.mappings[gsi.as_u8() as usize] = Some(entry);
+            inner.mappings[gsi.as_u8() as usize] = Some(irq);
         });
     }
 
-    pub fn get_entry(&self, gsi: GSI) -> Option<LogicalIrq> {
+    pub fn get_entry(&self, gsi: GSI) -> Option<VirtualIrq> {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let inner = self.inner.lock();
             inner.mappings[gsi.as_u8() as usize]

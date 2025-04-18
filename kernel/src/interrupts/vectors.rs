@@ -1,18 +1,18 @@
 use spin::Mutex;
 
-use super::{LogicalIrq, Vector};
+use super::{Vector, VirtualIrq};
 
 const NORMAL_VECTORS_START: u8 = 0x20;
 
-pub static VECTOR_TO_LOGICAL_MAP: VectorToLogicalMap = VectorToLogicalMap::new();
-pub static LOGICAL_TO_VECTOR_MAP: LogicalToVectorMap = LogicalToVectorMap::new();
+pub static VECTOR_TO_VIRTUAL_MAP: VectorToVirtualMap = VectorToVirtualMap::new();
+pub static VIRTUAL_TO_VECTOR_MAP: VirtualToVectorMap = VirtualToVectorMap::new();
 
-struct InnerVectorToLogical {
-    mappings: [Option<LogicalIrq>; 256],
+struct InnerVectorToVirtual {
+    mappings: [Option<VirtualIrq>; 256],
     next_vector: u8,
 }
 
-impl InnerVectorToLogical {
+impl InnerVectorToVirtual {
     const fn new() -> Self {
         Self {
             mappings: [None; 256],
@@ -21,14 +21,14 @@ impl InnerVectorToLogical {
     }
 }
 
-pub struct VectorToLogicalMap {
-    inner: Mutex<InnerVectorToLogical>,
+pub struct VectorToVirtualMap {
+    inner: Mutex<InnerVectorToVirtual>,
 }
 
-impl VectorToLogicalMap {
+impl VectorToVirtualMap {
     const fn new() -> Self {
         Self {
-            inner: Mutex::new(InnerVectorToLogical::new()),
+            inner: Mutex::new(InnerVectorToVirtual::new()),
         }
     }
 
@@ -48,14 +48,14 @@ impl VectorToLogicalMap {
         })
     }
 
-    pub fn set_entry(&self, vector: Vector, logical: LogicalIrq) {
+    pub fn set_entry(&self, vector: Vector, irq: VirtualIrq) {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let mut inner = self.inner.lock();
-            inner.mappings[vector.as_u8() as usize] = Some(logical);
+            inner.mappings[vector.as_u8() as usize] = Some(irq);
         });
     }
 
-    pub fn get_entry(&self, vector: Vector) -> Option<LogicalIrq> {
+    pub fn get_entry(&self, vector: Vector) -> Option<VirtualIrq> {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let inner = self.inner.lock();
             inner.mappings[vector.as_u8() as usize]
@@ -63,11 +63,11 @@ impl VectorToLogicalMap {
     }
 }
 
-struct InnerLogicalToVector {
+struct InnerVirtualToVector {
     mappings: [Option<Vector>; 256],
 }
 
-impl InnerLogicalToVector {
+impl InnerVirtualToVector {
     const fn new() -> Self {
         Self {
             mappings: [None; 256],
@@ -75,28 +75,28 @@ impl InnerLogicalToVector {
     }
 }
 
-pub struct LogicalToVectorMap {
-    inner: Mutex<InnerLogicalToVector>,
+pub struct VirtualToVectorMap {
+    inner: Mutex<InnerVirtualToVector>,
 }
 
-impl LogicalToVectorMap {
+impl VirtualToVectorMap {
     const fn new() -> Self {
         Self {
-            inner: Mutex::new(InnerLogicalToVector::new()),
+            inner: Mutex::new(InnerVirtualToVector::new()),
         }
     }
 
-    pub fn set_entry(&self, logical: LogicalIrq, vector: Vector) {
+    pub fn set_entry(&self, irq: VirtualIrq, vector: Vector) {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let mut inner = self.inner.lock();
-            inner.mappings[logical.as_u8() as usize] = Some(vector);
+            inner.mappings[irq.as_u8() as usize] = Some(vector);
         });
     }
 
-    pub fn get_entry(&self, logical: LogicalIrq) -> Option<Vector> {
+    pub fn get_entry(&self, irq: VirtualIrq) -> Option<Vector> {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let inner = self.inner.lock();
-            inner.mappings[logical.as_u8() as usize]
+            inner.mappings[irq.as_u8() as usize]
         })
     }
 }

@@ -1,14 +1,24 @@
 use core::alloc::Layout;
 
+use alloc::boxed::Box;
 use commands::{AdminCommand, CreateIOCompletionQueueCommand, CreateIOSubmissionQueueCommand};
 use x86_64::{
     PhysAddr, VirtAddr,
     structures::paging::{PageTableFlags, PhysFrame},
 };
 
-use crate::{allocator::ALLOCATOR, drivers::pci::PCI_SUBSYSTEM, logln, memory::MEMORY_MAPPER};
+use crate::{
+    allocator::ALLOCATOR,
+    drivers::pci::{BUS_MASTER_ENABLE, IO_SPACE_ENABLE, MEMORY_SPACE_ENABLE, PCI_SUBSYSTEM},
+    kprintln,
+    memory::MEMORY_MAPPER,
+};
 
-use super::pci::PCIGeneralDevice;
+use super::{
+    DriverResult,
+    pci::{PCIDevice, PCIDeviceClass, PCIDeviceSetup},
+    register::{PCIDriver, PCIDriverCreator},
+};
 
 mod commands;
 
@@ -27,13 +37,6 @@ const COMPLETION_QUEUE_ENTRY_SIZE: u64 = 16;
 const COMPLETION_QUEUE_ENTRY_SIZE_POW_2: u8 = COMPLETION_QUEUE_ENTRY_SIZE.ilog2() as u8;
 const SUBMISSION_QUEUE_SIZE_ENTRIES: u64 = QUEUE_SIZE_BYTES / SUBMISSION_QUEUE_ENTRY_SIZE;
 const COMPLETION_QUEUE_SIZE_ENTRIES: u64 = QUEUE_SIZE_BYTES / COMPLETION_QUEUE_ENTRY_SIZE;
-
-type DriverResult<T> = Result<T, NVMEDriverError>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NVMEDriverError {
-    MemoryMappingFailed,
-}
 
 #[derive(Debug, Clone, Copy)]
 struct NVMEQueue {
@@ -108,9 +111,26 @@ impl ControllerConfiguration {
     }
 }
 
-#[derive(Debug)]
+pub struct NVMEDriverCreator;
+
+impl PCIDriverCreator for NVMEDriverCreator {
+    fn detect(&self, device: &super::pci::PCIDevice) -> bool {
+        let PCIDevice::General(device) = device;
+
+        device.device_class
+            == PCIDeviceClass::MassStorage(super::pci::MassStorageController::NVMController)
+    }
+
+    fn create(
+        &self,
+        setup: super::pci::PCIDeviceSetup,
+    ) -> Result<alloc::boxed::Box<dyn super::register::PCIDriver>, kernel::SystemError> {
+        Ok(Box::new(NVMEDriver::new(setup)?))
+    }
+}
+
 pub struct NVMEDriver {
-    device: PCIGeneralDevice,
+    setup: PCIDeviceSetup,
     base_address: u64,
     capability_stride: u8,
     admin_channel: AdminChannel,
@@ -118,13 +138,21 @@ pub struct NVMEDriver {
     io_completion_queue: NVMEQueue,
 }
 
+impl PCIDriver for NVMEDriver {
+    fn name(&self) -> &'static str {
+        "NVMe Driver"
+    }
+}
+
 impl NVMEDriver {
-    pub fn new(mut device: PCIGeneralDevice) -> DriverResult<Self> {
+    pub fn new(mut setup: PCIDeviceSetup) -> DriverResult<Self> {
+        let PCIDevice::General(device) = &mut setup.device;
+
         let base_address = ((device.bar1() as u64) << 32) | (device.bar0() & 0xFFFFFFF0) as u64;
         let capability_stride = ((base_address >> 12) & 0xF) as u8;
 
-        logln!("NVMe base address: {:016x}", base_address);
-        logln!("NVMe capability stride: {:02x}", capability_stride);
+        kprintln!("NVMe base address: {:016x}", base_address);
+        kprintln!("NVMe capability stride: {:02x}", capability_stride);
 
         unsafe {
             // First page
@@ -133,39 +161,42 @@ impl NVMEDriver {
                     PhysFrame::from_start_address(PhysAddr::new(base_address)).unwrap(),
                     PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE,
                 )
-                .map_err(|_| NVMEDriverError::MemoryMappingFailed)?;
+                .map_err(|_| kernel::SystemError::ResourceInvalid)?;
             // Second page
             MEMORY_MAPPER
                 .identity_map(
                     PhysFrame::from_start_address(PhysAddr::new(base_address + 0x1000)).unwrap(),
                     PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE,
                 )
-                .map_err(|_| NVMEDriverError::MemoryMappingFailed)?;
+                .map_err(|_| kernel::SystemError::ResourceInvalid)?;
         }
 
-        logln!("Successfully mapped NVMe base address");
+        kprintln!("Successfully mapped NVMe base address");
 
         let controller_capabilities =
             unsafe { Self::read_nvme_reg_64(base_address, CONTROLLER_CAPABILITIES_REG) };
 
         let max_queue_size = (controller_capabilities & 0xFFFF) as u16;
 
-        logln!("Maximum queue entries supported: {}", max_queue_size);
+        kprintln!("Maximum queue entries supported: {}", max_queue_size);
 
         // Enable bus mastering, memory space, and I/O space
-        PCI_SUBSYSTEM.send_command(&mut device, 0b111);
+        PCI_SUBSYSTEM.send_command(
+            device,
+            BUS_MASTER_ENABLE | MEMORY_SPACE_ENABLE | IO_SPACE_ENABLE,
+        );
 
         // Reset the controller
         Self::set_controller_configuration(base_address, ControllerConfiguration::new(false));
 
         let mut admin_channel = Self::create_admin_queues(base_address, capability_stride)?;
 
-        logln!(
+        kprintln!(
             "Admin submission queue created: addr {:08x}, size {}",
             admin_channel.submission_queue.address,
             admin_channel.completion_queue.size
         );
-        logln!(
+        kprintln!(
             "Admin completion queue created: addr {:08x}, size {}",
             admin_channel.completion_queue.address,
             admin_channel.submission_queue.size
@@ -176,14 +207,14 @@ impl NVMEDriver {
 
         Self::wait_until_controller_ready(base_address);
 
-        logln!("Interrupt pin: {}", device.interrupt_pin());
-        logln!("Interrupt line: {}", device.interrupt_line());
+        kprintln!("Interrupt pin: {:?}", device.interrupt_pin());
+        kprintln!("Interrupt line: {}", device.interrupt_line());
 
         let (io_submission_queue, io_completion_queue) =
             Self::create_io_queues(base_address, capability_stride, &mut admin_channel)?;
 
         let driver = Self {
-            device,
+            setup,
             base_address,
             capability_stride,
             admin_channel,
@@ -226,16 +257,16 @@ impl NVMEDriver {
             .lock()
             .allocate_first_fit(
                 Layout::from_size_align(size, 4096)
-                    .map_err(|_| NVMEDriverError::MemoryMappingFailed)?,
+                    .map_err(|_| kernel::SystemError::ResourceInvalid)?,
             )
-            .map_err(|_| NVMEDriverError::MemoryMappingFailed)?;
+            .map_err(|_| kernel::SystemError::ResourceInvalid)?;
 
         let virt_addr = VirtAddr::from_ptr(virt_ptr.as_ptr());
 
         let phys_addr = unsafe {
             MEMORY_MAPPER
                 .virt_to_phys(VirtAddr::new(virt_ptr.as_ptr() as u64))
-                .map_err(|_| NVMEDriverError::MemoryMappingFailed)
+                .map_err(|_| kernel::SystemError::ResourceInvalid)
         }?;
 
         Ok((virt_addr, phys_addr))

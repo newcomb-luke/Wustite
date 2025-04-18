@@ -10,10 +10,11 @@ pub mod ide;
 pub mod input;
 pub mod nvme;
 pub mod pci;
+pub mod register;
 pub mod serial;
 pub mod video;
 
-pub type DriverResult = Result<(), SystemError>;
+pub type DriverResult<T> = Result<T, SystemError>;
 
 pub unsafe fn write_io_port_u8(port: u16, data: u8) {
     unsafe {

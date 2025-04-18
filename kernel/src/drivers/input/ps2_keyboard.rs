@@ -5,8 +5,8 @@ use spin::{Mutex, Once};
 use crate::{
     acpi::acpi_request_irq,
     drivers::{DriverResult, read_io_port_u8},
-    interrupts::{GSI, IrqResult, LogicalIrq},
-    kprintln, log,
+    interrupts::{GSI, IrqResult, VirtualIrq},
+    kprintln,
     resource::request_port,
 };
 
@@ -30,7 +30,7 @@ impl PS2KeyboardDriver {
         }
     }
 
-    pub fn initialize(&'static self) -> DriverResult {
+    pub fn initialize(&'static self) -> DriverResult<()> {
         x86_64::instructions::interrupts::without_interrupts(|| {
             let inner = self.inner.lock();
 
@@ -58,7 +58,7 @@ impl PS2KeyboardDriver {
         })
     }
 
-    extern "C" fn handle_interrupt(&'static self, _irq: LogicalIrq) -> IrqResult {
+    extern "C" fn handle_interrupt(&'static self, _irq: VirtualIrq) -> IrqResult {
         let mut inner = self.inner.lock();
         let keyboard_inner = inner.get_mut().unwrap();
         let keyboard = &mut keyboard_inner.keyboard;
@@ -142,5 +142,3 @@ impl KeyboardBuffer {
         })
     }
 }
-
-pub fn handle_keyboard_interrupt() {}

@@ -1,6 +1,8 @@
+use core::{f64::INFINITY, str::FromStr};
+
 use acpi::{AcpiTables, AmlTable, InterruptModel, platform::interrupt::NmiProcessor};
-use alloc::boxed::Box;
-use aml::AmlContext;
+use alloc::{boxed::Box, format, string::String};
+use aml::{AmlContext, AmlName, AmlValue, resource::Resource, value::Args};
 use common::BootInfo;
 use handlers::{KernelAcpiHandler, KernelAmlHandler};
 use kernel::SystemError;
@@ -8,9 +10,10 @@ use spin::{Mutex, Once};
 use x86_64::PhysAddr;
 
 use crate::{
+    drivers::pci::{InterruptPin, PCIAddress},
     interrupts::{
-        GSI, GSI_OVERRIDE_TABLE, GSIOverrideEntry, IrqHandler, assign_irq_vector,
-        create_irq_mapping,
+        GSI, GSI_OVERRIDE_TABLE, GSIOverrideEntry, IrqHandler, Vector, VirtualIrq,
+        assign_irq_vector, create_irq_mapping,
         io_apic::{DeliveryMode, Destination, IO_APIC, PinPolarity, TriggerMode},
         local_apic::LocalInterrupt,
     },
@@ -142,195 +145,176 @@ pub fn init_acpi(boot_info: &BootInfo) {
         let tables = ACPI_TABLES.lock();
         tables.call_once(move || acpi_tables);
     }
+}
 
-    // if let Ok(_pci_config) = PciConfigRegions::new(&tables) {
-    //     kprintln!("ACPI: Found MCFG - Root bus is PCIe");
-    //     unimplemented!()
-    // } else {
-    //     kprintln!("ACPI: Could not find MCFG - Falling back to legacy PCI");
-    // }
+pub fn acpi_pci_get_routing(
+    address: PCIAddress,
+    interrupt_pin: InterruptPin,
+) -> Result<VirtualIrq, SystemError> {
+    kprintln!("ACPI: Finding routing for PCI device");
 
-    // let mut paths = Vec::new();
+    let gsi = acpi_get_gsi_from_prt(address, interrupt_pin)?;
 
-    // aml.namespace
-    //     .traverse(|name, level| {
-    //         if level.typ == LevelType::Device {
-    //             paths.push(name.clone());
-    //         }
-    //         Ok(true)
-    //     })
-    //     .unwrap();
+    let (gsi, vector, trigger, polarity, was_overridden) = get_legacy_irq_parameters(gsi)?;
 
-    // for path in paths {
-    //     let adr_path = AmlName::from_str("_ADR").unwrap().resolve(&path).unwrap();
-    //     let hid_path = AmlName::from_str("_HID").unwrap().resolve(&path).unwrap();
+    if !was_overridden {
+        kprintln!(
+            "ACPI: Warning! Using Edge/ActiveHigh on GSI {} for a PCI device. This may cause problems.",
+            gsi.as_u8()
+        );
+    }
 
-    //     logln!("{}:", path);
+    IO_APIC.set_redirect(
+        gsi,
+        vector,
+        DeliveryMode::Fixed,
+        trigger,
+        polarity,
+        false,
+        Destination::Physical(0),
+    )?;
 
-    //     if let Ok(adr) = aml.invoke_method(&adr_path, aml::value::Args::EMPTY) {
-    //         logln!("   ADR {:016x}", adr.as_integer(&mut aml).unwrap());
-    //     }
-    //     if let Ok(hid) = aml.invoke_method(&hid_path, aml::value::Args::EMPTY) {
-    //         match hid {
-    //             aml::AmlValue::Integer(int_val) => {
-    //                 if let Some(acpi_device) = acpi_device_from_hid(int_val) {
-    //                     logln!("   Device: {:?}", acpi_device);
-    //                     logln!("   HID {:016x}", int_val);
+    create_irq_mapping(gsi)
+}
 
-    //                     let status_path =
-    //                         AmlName::from_str("_STA").unwrap().resolve(&path).unwrap();
+fn acpi_get_gsi_from_prt(
+    address: PCIAddress,
+    interrupt_pin: InterruptPin,
+) -> Result<GSI, SystemError> {
+    let mut lock = INTERPRETER.aml.lock();
+    let interpreter = lock.get_mut().unwrap();
 
-    //                     if acpi_device == AcpiDevice::PS2Keyboard
-    //                         || acpi_device == AcpiDevice::PS2Mouse
-    //                     {
-    //                         let status = aml
-    //                             .namespace
-    //                             .get_by_path(&status_path)
-    //                             .unwrap()
-    //                             .as_status()
-    //                             .unwrap();
+    let root_prt = interpreter
+        .invoke_method(
+            &AmlName::from_str("\\_SB.PCI0._PRT").map_err(|_| SystemError::ResourceNotFound)?,
+            Args::EMPTY,
+        )
+        .map_err(|_| SystemError::ResourceNotFound)?;
 
-    //                         if status.present && status.enabled {
-    //                             let crs_path =
-    //                                 AmlName::from_str("_CRS").unwrap().resolve(&path).unwrap();
+    if let AmlValue::Package(prt_entries) = root_prt {
+        for entry in prt_entries {
+            if let AmlValue::Package(elements) = entry {
+                let address_mask = match &elements[0] {
+                    AmlValue::Integer(v) => *v,
+                    _ => unimplemented!(),
+                };
+                let prt_pin = match &elements[1] {
+                    AmlValue::Integer(v) => *v,
+                    _ => unimplemented!(),
+                };
 
-    //                             let value = aml
-    //                                 .invoke_method(&crs_path, aml::value::Args::EMPTY)
-    //                                 .unwrap();
+                if !match_pci_device_to_prt(address, interrupt_pin, address_mask, prt_pin) {
+                    continue;
+                }
 
-    //                             let crs = aml::resource::resource_descriptor_list(&value).unwrap();
+                kprintln!("ACPI: Found _PRT entry for PCI device");
 
-    //                             for resource in crs {
-    //                                 match resource {
-    //                                     aml::resource::Resource::Irq(irq) => {
-    //                                         let irq_mask = irq.irq;
+                let source = &elements[2];
 
-    //                                         if irq_mask.count_ones() == 1 {
-    //                                             let irq_num = irq_mask.trailing_zeros();
+                let parameters = match &source {
+                    AmlValue::String(link_name) => acpi_resolve_link_irq(interpreter, link_name)?,
+                    AmlValue::Integer(gsi) => {
+                        kprintln!("ACPI: Found GSI {} for PCI device directly in PRT", gsi);
 
-    //                                             if crate::interrupts::io_apic::IO_APIC
-    //                                                 .is_redirect_set(irq_num)
-    //                                             {
-    //                                                 panic!(
-    //                                                     "ACPI: IO APIC already has redirect entry set for GSI {}",
-    //                                                     irq_num
-    //                                                 );
-    //                                             }
+                        GSI::from_u8(*gsi as u8)
+                    }
+                    _ => {
+                        panic!(
+                            "ACPI: Some logic is wrong here. AML PRT entry source was neither String nor Integer"
+                        );
+                    }
+                };
 
-    //                                             // logln!("   Real IRQ: {}", irq_num);
-    //                                             // logln!("   Descriptor: {:?}", irq);
+                return Ok(parameters);
+            } else {
+                panic!("ACPI: Some logic is wrong here. AML PRT entry did not contain a Package");
+            }
+        }
+    } else {
+        panic!("ACPI: Some logic is wrong here. AML PRT table did not contain a Package");
+    }
 
-    //                                             let trigger = match irq.trigger {
-    //                                                 aml::resource::InterruptTrigger::Edge => {
-    //                                                     TriggerMode::Edge
-    //                                                 }
-    //                                                 aml::resource::InterruptTrigger::Level => {
-    //                                                     TriggerMode::Level
-    //                                                 }
-    //                                             };
+    Err(SystemError::ResourceNotFound)
+}
 
-    //                                             let polarity = match irq.polarity {
-    //                                                 aml::resource::InterruptPolarity::ActiveHigh => PinPolarity::ActiveHigh,
-    //                                                 aml::resource::InterruptPolarity::ActiveLow => PinPolarity::ActiveLow,
-    //                                             };
+fn match_pci_device_to_prt(
+    address: PCIAddress,
+    interrupt_pin: InterruptPin,
+    address_mask: u64,
+    prt_pin: u64,
+) -> bool {
+    if interrupt_pin.as_u8() != prt_pin as u8 {
+        return false;
+    }
 
-    //                                             crate::interrupts::io_apic::IO_APIC.set_redirect(
-    //                                                 irq_num,
-    //                                                 0x20 + (irq_num as u8),
-    //                                                 DeliveryMode::Fixed,
-    //                                                 trigger,
-    //                                                 polarity,
-    //                                                 false,
-    //                                                 Destination::Physical(0),
-    //                                             );
-    //                                         } else {
-    //                                             // Multiple IRQs are possible
-    //                                             unimplemented!();
-    //                                         }
-    //                                     }
-    //                                     _ => {
-    //                                         // logln!("{:#?}", resource);
-    //                                     }
-    //                                 }
-    //                             }
-    //                         }
-    //                     } else if acpi_device == AcpiDevice::PCIInterruptLinkDevice {
-    //                         let crs_path =
-    //                             AmlName::from_str("_CRS").unwrap().resolve(&path).unwrap();
+    let prt_device = ((address_mask >> 16) & 0xFF) as u8;
+    let function_mask = ((address_mask >> 8) & 0xFF) as u8;
 
-    //                         let value = aml
-    //                             .invoke_method(&crs_path, aml::value::Args::EMPTY)
-    //                             .unwrap();
+    if address.device != prt_device {
+        return false;
+    }
 
-    //                         let crs = aml::resource::resource_descriptor_list(&value).unwrap();
+    // 0xFF is a wildcard which matches any function on a device
+    function_mask == 0xFF || address.function == function_mask
+}
 
-    //                         logln!("{:#?}", crs);
-    //                     }
-    //                 } else {
-    //                     logln!("   HID {:016x}", int_val);
-    //                 }
-    //             }
-    //             aml::AmlValue::String(s_val) => {
-    //                 logln!("   HID {}", s_val);
-    //             }
-    //             _ => unimplemented!(),
-    //         }
-    //     }
-    // }
+fn acpi_resolve_link_irq(
+    interpreter: &mut AmlContext,
+    source: &String,
+) -> Result<GSI, SystemError> {
+    kprintln!("ACPI: Looking for GSI for PCI link device {}", source);
 
-    // let root_prt = aml
-    //     .invoke_method(
-    //         &AmlName::from_str("\\_SB.PCI0._PRT").unwrap(),
-    //         aml::value::Args::EMPTY,
-    //     )
-    //     .unwrap();
+    let crs_path = AmlName::from_str(&format!("\\_SB.{}._CRS", source)).unwrap();
 
-    // if let AmlValue::Package(entries) = root_prt {
-    //     for entry in entries {
-    //         if let AmlValue::Package(elements) = entry {
-    //             let pci_address = match &elements[0] {
-    //                 AmlValue::Integer(v) => v,
-    //                 _ => unimplemented!(),
-    //             };
-    //             let int_pin = match &elements[1] {
-    //                 AmlValue::Integer(v) => v,
-    //                 _ => unimplemented!(),
-    //             };
-    //             let source = &elements[2];
-    //             let gsi = match &elements[3] {
-    //                 AmlValue::Integer(v) => v,
-    //                 _ => unimplemented!(),
-    //             };
+    kprintln!("Got here");
 
-    //             logln!("PCI address: {:016x}", pci_address);
-    //             logln!("Interrupt pin: {:016x}", int_pin);
-    //             logln!("Source: {:?}", source);
-    //             logln!("GSI: {:016x}", gsi);
-    //             logln!("----------------------------------------")
-    //         }
-    //     }
-    // }
+    let test_path = AmlName::from_str("\\_SB.LNKC._HID").unwrap();
+    let test_val = interpreter.invoke_method(&test_path, aml::value::Args::EMPTY);
+    kprintln!("TEST _HID result: {:?}", test_val);
 
-    // if let Ok((name, handle)) = aml.namespace.search(
-    //     &AmlName::from_str("_CRS").unwrap(),
-    //     &AmlName::from_str("\\_SB.LNKA").unwrap(),
-    // ) {
-    //     let value = aml.namespace.get(handle).unwrap();
-    //     logln!("{:?}", value);
-    //     let crs = aml::resource::resource_descriptor_list(&value);
-    //     logln!("{}: {:X?}", name, crs);
-    // }
+    let link_crs = interpreter
+        .invoke_method(&crs_path, aml::value::Args::EMPTY)
+        .map_err(|_| SystemError::ResourceNotFound)?;
 
-    // let linka_crs = aml
-    //     .invoke_method(
-    //         &AmlName::from_str("\\_SB.LNKA._CRS").unwrap(),
-    //         aml::value::Args::EMPTY,
-    //     )
-    //     .unwrap();
+    kprintln!("And got here");
 
-    // let resources = aml::resource::resource_descriptor_list(&linka_crs).unwrap();
+    let resources = aml::resource::resource_descriptor_list(&link_crs).unwrap();
 
-    // logln!("{:#?}", resources);
+    for resource in resources {
+        kprintln!("ACPI: Found resource {:?}", resource);
+
+        match resource {
+            Resource::Irq(descriptor) => {
+                // let trigger = match descriptor.trigger {
+                //     aml::resource::InterruptTrigger::Edge => TriggerMode::Edge,
+                //     aml::resource::InterruptTrigger::Level => TriggerMode::Level,
+                // };
+                // let polarity = match descriptor.polarity {
+                //     aml::resource::InterruptPolarity::ActiveHigh => PinPolarity::ActiveHigh,
+                //     aml::resource::InterruptPolarity::ActiveLow => PinPolarity::ActiveLow,
+                // };
+
+                kprintln!(
+                    "ACPI: Found GSI {} for PCI device directly in PCI link {}",
+                    descriptor.irq,
+                    source
+                );
+
+                if descriptor.irq == 0 {
+                    panic!("ACPI: Will need to assign IRQ");
+                }
+
+                return Ok(GSI::from_u8(descriptor.irq as u8));
+            }
+            _ => {
+                kprintln!("ACPI: Found other: {:?}", resource);
+                todo!();
+                continue;
+            }
+        }
+    }
+
+    Err(SystemError::ResourceNotFound)
 }
 
 pub fn acpi_request_irq<T>(
@@ -338,7 +322,27 @@ pub fn acpi_request_irq<T>(
     context: &'static T,
     handler: IrqHandler<T>,
 ) -> Result<(), SystemError> {
-    let (gsi, vector, trigger, polarity) =
+    let (gsi, vector, trigger, polarity, _) = get_legacy_irq_parameters(isa)?;
+
+    IO_APIC.set_redirect(
+        gsi,
+        vector,
+        DeliveryMode::Fixed,
+        trigger,
+        polarity,
+        false,
+        Destination::Physical(0),
+    )?;
+
+    let irq = create_irq_mapping(gsi)?;
+
+    request_irq(irq, context, handler)
+}
+
+fn get_legacy_irq_parameters(
+    isa: GSI,
+) -> Result<(GSI, Vector, TriggerMode, PinPolarity, bool), SystemError> {
+    Ok(
         if let Some(gsi_override) = GSI_OVERRIDE_TABLE.check_override(isa) {
             // An override existed in the ACPI tables
 
@@ -350,6 +354,7 @@ pub fn acpi_request_irq<T>(
                 vector,
                 gsi_override.trigger(),
                 gsi_override.polarity(),
+                true,
             )
         } else {
             // No override existed in the ACPI tables, just map it directly
@@ -365,20 +370,9 @@ pub fn acpi_request_irq<T>(
                 (TriggerMode::Level, PinPolarity::ActiveLow)
             };
 
-            (isa, vector, trigger, polarity)
-        };
-
-    IO_APIC.set_redirect(
-        gsi,
-        vector,
-        DeliveryMode::Fixed,
-        trigger,
-        polarity,
-        false,
-        Destination::Physical(0),
-    )?;
-
-    request_irq(gsi, context, handler)
+            (isa, vector, trigger, polarity, false)
+        },
+    )
 }
 
 fn register_gsi_override(isa: GSI, gsi: GSI, trigger: TriggerMode, polarity: PinPolarity) {

@@ -7,7 +7,7 @@ use handlers::{
 use kernel::SystemError;
 use lazy_static::lazy_static;
 use paste::paste;
-use vectors::{LOGICAL_TO_VECTOR_MAP, VECTOR_TO_LOGICAL_MAP};
+use vectors::{VECTOR_TO_VIRTUAL_MAP, VIRTUAL_TO_VECTOR_MAP};
 use x86_64::structures::idt::InterruptDescriptorTable;
 
 mod gsi;
@@ -15,11 +15,11 @@ mod handlers;
 pub mod io_apic;
 mod legacy;
 pub mod local_apic;
-mod logical;
 mod vectors;
+mod virtual_irq;
 
 pub use gsi::*;
-pub use logical::*;
+pub use virtual_irq::*;
 
 use crate::{kprintln, logln};
 
@@ -96,9 +96,9 @@ pub enum IrqResult {
 }
 
 fn normal_interrupt(vector: u8) {
-    if let Some(logical) = VECTOR_TO_LOGICAL_MAP.get_entry(Vector::from_u8(vector)) {
-        if let Some(entry) = LOGICAL_IRQ_MAPPING_TABLE.get_entry(logical) {
-            match entry.call(logical) {
+    if let Some(irq) = VECTOR_TO_VIRTUAL_MAP.get_entry(Vector::from_u8(vector)) {
+        if let Some(entry) = VIRTUAL_IRQ_MAPPING_TABLE.get_entry(irq) {
+            match entry.call(irq) {
                 IrqResult::NotHandled => {
                     unimplemented!();
                 }
@@ -115,8 +115,8 @@ fn normal_interrupt(vector: u8) {
     }
 }
 
-pub type IrqHandler<T> = extern "C" fn(&'static T, irq: LogicalIrq) -> IrqResult;
-pub type ErasedIrqHandler = extern "C" fn(*const (), irq: LogicalIrq) -> IrqResult;
+pub type IrqHandler<T> = extern "C" fn(&'static T, irq: VirtualIrq) -> IrqResult;
+pub type ErasedIrqHandler = extern "C" fn(*const (), irq: VirtualIrq) -> IrqResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Vector(u8);
@@ -151,43 +151,43 @@ pub fn init() {
     IDT.load();
 }
 
-pub fn create_irq_mapping(gsi: GSI) -> Result<LogicalIrq, SystemError> {
-    if let Some(logical_irq) = GSI_MAPPING_TABLE.get_entry(gsi) {
-        return Ok(logical_irq);
+pub fn create_irq_mapping(gsi: GSI) -> Result<VirtualIrq, SystemError> {
+    if let Some(irq) = GSI_MAPPING_TABLE.get_entry(gsi) {
+        return Ok(irq);
     }
 
-    let logical_irq = LOGICAL_IRQ_MAPPING_TABLE
+    let virtual_irq = VIRTUAL_IRQ_MAPPING_TABLE
         .next_free_irq()
         .ok_or(SystemError::NoResourcesAvailable)?;
 
     kprintln!(
-        "Created new interrupt mapping from GSI {} to logical IRQ {}",
+        "Created new interrupt mapping from GSI {} to virtual IRQ {}",
         gsi.as_u8(),
-        logical_irq.as_u8()
+        virtual_irq.as_u8()
     );
 
-    GSI_MAPPING_TABLE.set_entry(gsi, logical_irq);
+    GSI_MAPPING_TABLE.set_entry(gsi, virtual_irq);
 
-    Ok(logical_irq)
+    Ok(virtual_irq)
 }
 
-pub fn assign_irq_vector(irq: LogicalIrq) -> Result<Vector, SystemError> {
-    if let Some(vector) = LOGICAL_TO_VECTOR_MAP.get_entry(irq) {
+pub fn assign_irq_vector(irq: VirtualIrq) -> Result<Vector, SystemError> {
+    if let Some(vector) = VIRTUAL_TO_VECTOR_MAP.get_entry(irq) {
         return Ok(vector);
     }
 
-    let vector = VECTOR_TO_LOGICAL_MAP
+    let vector = VECTOR_TO_VIRTUAL_MAP
         .next_free_vector()
         .ok_or(SystemError::NoResourcesAvailable)?;
 
     kprintln!(
-        "Assigned logical IRQ {} to LAPIC interrupt vector 0x{:02x}",
+        "Assigned virtual IRQ {} to LAPIC interrupt vector 0x{:02x}",
         irq.as_u8(),
         vector.as_u8()
     );
 
-    VECTOR_TO_LOGICAL_MAP.set_entry(vector, irq);
-    LOGICAL_TO_VECTOR_MAP.set_entry(irq, vector);
+    VECTOR_TO_VIRTUAL_MAP.set_entry(vector, irq);
+    VIRTUAL_TO_VECTOR_MAP.set_entry(irq, vector);
 
     Ok(vector)
 }
